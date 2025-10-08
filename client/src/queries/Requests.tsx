@@ -13,7 +13,7 @@ export function useRequestsQuery(
                 headers.Authorization = `Bearer ${token}`;
             }
             
-            const response = await fetch('/api/requests', { headers });
+            const response = await fetch('/api/requests?status=all&limit=200', { headers });
             
             if (!response.ok) {
                 if (response.status === 401 || response.status === 403) {
