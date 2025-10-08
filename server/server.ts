@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type Request, type Response, type NextFunction, type RequestHandler } from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
 import { Tracks } from './Tracks';
@@ -10,12 +10,14 @@ import { authenticateJWT, login } from './auth';
 import { SettingsDto } from '../shared/SettingsDto';
 
 // Helper to get real client IP behind proxies/load balancers
-function getClientIp(req: import('express').Request): string {
+const getClientIp = (req: Request): string => {
     const xff = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim();
-            return;
-    const raw = xff || req.socket.remoteAddress || (req as any).ip || 'unknown';
-    return raw && raw.startsWith('::ffff:') ? raw.substring(7) : raw;
-}
+    const raw = xff ?? req.socket.remoteAddress ?? (req as any).ip ?? '';
+    const ip = raw.startsWith('::ffff:') ? raw.slice(7) : raw;
+    return ip || 'unknown';
+};
+
+
 
 
 if (process.env.NODE_ENV !== 'production') {
@@ -24,16 +26,11 @@ if (process.env.NODE_ENV !== 'production') {
   }
 
 const app = express();
-            return;
 app.set('trust proxy', true);
-            return;
 const MAX_REQUESTS_PER_HOUR = Number(process.env.MAX_REQUESTS_PER_HOUR || 4);
-            return;
 const MAX_REQUESTS_PER_DAY  = Number(process.env.MAX_REQUESTS_PER_DAY  || 20);
-            return;
 const PORT = process.env.PORT || 3000;
 const MAX_MESSAGE_LENGTH = parseInt(process.env.MAX_MESSAGE_LENGTH || '150', 10);
-            return;
 const requiredEnvVars = ['PLAYIT_LIVE_BASE_URL', 'PLAYIT_LIVE_API_KEY'];
 requiredEnvVars.forEach(varName => {
   if (!process.env[varName]) {
@@ -43,46 +40,50 @@ requiredEnvVars.forEach(varName => {
             return;
   }
 });
-            return;
 const playItLiveBaseUrl = process.env.PLAYIT_LIVE_BASE_URL!;
 const playItLiveApiKey = process.env.PLAYIT_LIVE_API_KEY!;
 const requestableTrackGroupName = process.env.REQUESTABLE_TRACK_GROUP_NAME;
 
 console.log('PLAYIT_LIVE_BASE_URL', playItLiveBaseUrl);
-            return;
 console.log('PLAYIT_LIVE_API_KEY', '*'.repeat(playItLiveApiKey.length));
-            return;
 console.log('REQUESTABLE_TRACK_GROUP_NAME', requestableTrackGroupName || '<not set>');
-            return;
 console.log('MAX_MESSAGE_LENGTH', MAX_MESSAGE_LENGTH);
-            return;
 // Set up middleware FIRST
 app.use(express.json());
-            return;
 app.use(express.urlencoded({ extended: true }));
-            return;
 app.use(express.static(path.join(__dirname, '../client/dist')));
-            return;
 const playItLiveApiClient = new PlayItLiveApiClient(playItLiveBaseUrl, playItLiveApiKey);
-            return;
 const tracks = new Tracks(playItLiveApiClient, requestableTrackGroupName);
-            return;
 tracks.init();
-            return;
 const requests = new Requests();
-            return;
 requests.init();
+
+
+// Per-IP limiter middleware
+const perIpLimiter: RequestHandler = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const clientIp = getClientIp(req);
+        const { perHour, perDay } = await requests.getCountsByIp(clientIp);
+        if (perHour >= MAX_REQUESTS_PER_HOUR) {
+            res.status(429).json({ success: false, message: `Per-IP limit reached: max ${MAX_REQUESTS_PER_HOUR} requests per hour.` });
             return;
+        }
+        if (perDay >= MAX_REQUESTS_PER_DAY) {
+            res.status(429).json({ success: false, message: `Per-IP limit reached: max ${MAX_REQUESTS_PER_DAY} requests per 24 hours.` });
+            return;
+        }
+        (req as any).__clientIp = clientIp;
+        next();
+    } catch (e) { next(e as Error); }
+};
+
 const requestAgent = new RequestAgent(playItLiveApiClient, tracks);
-            return;
 const requestProcessor = new RequestProcessor(requests, requestAgent);
-            return;
 // THEN define routes
 app.get('/api/tracks', (req, res) => {
     res.json(tracks.getRequestableTracks());
             return;
 });
-            return;
 app.get('/api/settings', (req, res) => {
 
     res.json({
@@ -90,8 +91,7 @@ app.get('/api/settings', (req, res) => {
     } satisfies SettingsDto);
             return;
 });
-            return;
-app.post('/api/requestTrack', async (req, res) => {
+app.post('/api/requestTrack', perIpLimiter, async (req: Request, res: Response) => {
     try {
         console.log('Requesting track:', req.body);
             return;
@@ -158,14 +158,11 @@ await requests.addRequest(trackGuid, requestedBy, trimmedMessage, clientIp);
             return;
     }
 });
-            return;
 app.post('/api/login', login);
-            return;
 app.get('/api/requests', authenticateJWT, async (req, res) => {
     res.json(await requests.getRequests());
             return;
 });
-            return;
 app.delete('/api/requests/:id', authenticateJWT, async (req, res) => {
     const { id } = req.params;
     const success = await requests.deleteRequest(id);
@@ -178,14 +175,11 @@ app.delete('/api/requests/:id', authenticateJWT, async (req, res) => {
             return;
     }
 });
-            return;
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../client/dist', 'index.html'));
             return;
 });
-            return;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
             return;
 });
-            return;
