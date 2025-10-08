@@ -22,7 +22,7 @@ const getClientIp = (req: Request): string => {
 
 if (process.env.NODE_ENV !== 'production') {
     dotenv.config();
-            return;
+
   }
 
 const app = express();
@@ -107,7 +107,6 @@ app.post('/api/requestTrack', perIpLimiter, async (req: Request, res: Response) 
                 message: 'Track GUID and requester name are required'
             });
             return;
-            return;
         }
 
         // Validate message length if provided
@@ -116,7 +115,6 @@ app.post('/api/requestTrack', perIpLimiter, async (req: Request, res: Response) 
                 success: false,
                 message: `Message exceeds maximum length of ${MAX_MESSAGE_LENGTH} characters`
             });
-            return;
             return;
         }
 
@@ -128,7 +126,6 @@ app.post('/api/requestTrack', perIpLimiter, async (req: Request, res: Response) 
                 success: false, 
                 message: 'This song has already been requested recently.' 
             });
-            return;
             return;
         }
 
