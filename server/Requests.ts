@@ -8,19 +8,20 @@ export class Requests {
         this.requests = [];
     }
 
-    async addRequest(trackGuid: any, requestedBy: any, message?: string, ipAddress?: string) {
+    // Add a request; ensures IP and timestamp are captured
+    async addRequest(trackGuid: string, requestedBy: string, message?: string, ipAddress?: string) {
         this.requests.push({
             id: uuidv4(),
             trackGuid,
             requestedBy,
             message,
-            ipAddress: ipAddress,
-            requestedAt: new Date()
+            ipAddress,
+            requestedAt: new Date(),
+            processedAt: undefined
         });
     }
 
     async init() {
-        // preload requests
         this.requests = [];
     }
 
@@ -32,18 +33,17 @@ export class Requests {
         return this.requests.filter(r => !r.processedAt);
     }
 
-    async isTrackAlreadyRequested(trackGuid: string): Promise<boolean> {
-        // Check if there's any unprocessed request for this track
+    async isTrackAlreadyRequested(trackGuid: string) {
         return this.requests.some(r => r.trackGuid === trackGuid && !r.processedAt);
     }
 
-    async markAsProcessed(id: string) {
+    async markProcessed(id: string) {
         const request = this.requests.find(r => r.id === id);
         if (request) {
             request.processedAt = new Date();
         }
     }
-    
+
     async deleteRequest(id: string) {
         const requestIndex = this.requests.findIndex(r => r.id === id);
         if (requestIndex !== -1) {
@@ -51,22 +51,22 @@ export class Requests {
             return true;
         }
         return false;
-    
+    }
 
-// Rolling-window counter by IP (ms window)
-private countInWindowByIp(ipAddress: string, windowMs: number): number {
-    const now = Date.now();
-    return this.requests.filter(r => {
-        if (!r.ipAddress) return false;
-        const ts = new Date(r.requestedAt).getTime();
-        return r.ipAddress === ipAddress && (now - ts) <= windowMs;
-    }).length;
-}
+    // Rolling-window counter by IP (ms window)
+    private countInWindowByIp(ipAddress: string, windowMs: number): number {
+        const now = Date.now();
+        return this.requests.filter(r => {
+            if (!r.ipAddress) return false;
+            const ts = new Date(r.requestedAt).getTime();
+            return r.ipAddress === ipAddress && (now - ts) <= windowMs;
+        }).length;
+    }
 
-async getCountsByIp(ipAddress: string) {
-    const perHour = this.countInWindowByIp(ipAddress, 60 * 60 * 1000);
-    const perDay  = this.countInWindowByIp(ipAddress, 24 * 60 * 60 * 1000);
-    return { perHour, perDay };
-}
-}
+    // Public helper to fetch counts for current hour/day (rolling windows)
+    async getCountsByIp(ipAddress: string) {
+        const perHour = this.countInWindowByIp(ipAddress, 60 * 60 * 1000);
+        const perDay  = this.countInWindowByIp(ipAddress, 24 * 60 * 60 * 1000);
+        return { perHour, perDay };
+    }
 }
