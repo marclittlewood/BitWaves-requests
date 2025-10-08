@@ -26,9 +26,11 @@ if (process.env.NODE_ENV !== 'production') {
   }
 
 const app = express();
+function dbg(...args: any[]) { if (DEBUG_REQUESTS) console.log('[REQUESTS]', ...args); }
 app.set('trust proxy', true);
 const MAX_REQUESTS_PER_HOUR = Number(process.env.MAX_REQUESTS_PER_HOUR || 4);
 const MAX_REQUESTS_PER_DAY  = Number(process.env.MAX_REQUESTS_PER_DAY  || 20);
+const DEBUG_REQUESTS = process.env.DEBUG_REQUESTS === '1';
 const PORT = process.env.PORT || 3000;
 const MAX_MESSAGE_LENGTH = parseInt(process.env.MAX_MESSAGE_LENGTH || '150', 10);
 const requiredEnvVars = ['PLAYIT_LIVE_BASE_URL', 'PLAYIT_LIVE_API_KEY'];
@@ -92,6 +94,7 @@ app.get('/api/settings', (req, res) => {
             return;
 });
 app.post('/api/requestTrack', perIpLimiter, async (req: Request, res: Response) => {
+    dbg('POST /api/requestTrack body', req.body);
     try {
         console.log('Requesting track:', req.body);
             return;
@@ -102,19 +105,13 @@ app.post('/api/requestTrack', perIpLimiter, async (req: Request, res: Response) 
 
         // Validate required fields
         if (!trackGuid || !requestedBy) {
-            res.status(400).json({
-                success: false,
-                message: 'Track GUID and requester name are required'
-            });
+            res.status(400).json({ success: false, message: 'Track GUID and requester name are required', got: req.body });
             return;
         }
 
         // Validate message length if provided
         if (messageString.length > MAX_MESSAGE_LENGTH) {
-            res.status(400).json({
-                success: false,
-                message: `Message exceeds maximum length of ${MAX_MESSAGE_LENGTH} characters`
-            });
+            res.status(400).json({ success: false, message: `Message exceeds maximum length of ${MAX_MESSAGE_LENGTH} characters`, gotLength: messageString.length });
             return;
         }
 
@@ -145,6 +142,7 @@ if (perDay >= MAX_REQUESTS_PER_DAY) {
 }
 
 await requests.addRequest(trackGuid, requestedBy, trimmedMessage, clientIp);
+        dbg('Request queued OK', { trackGuid, requestedBy, clientIp });
             return;
         res.json({ success: true });
             return;
@@ -172,6 +170,8 @@ app.delete('/api/requests/:id', authenticateJWT, async (req, res) => {
             return;
     }
 });
+app.get('/api/_debug/ping', (req, res) => { res.json({ ok: true, ip: (req.headers['x-forwarded-for']||req.socket.remoteAddress||'').toString() }); });
+
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../client/dist', 'index.html'));
             return;
