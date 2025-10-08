@@ -94,11 +94,34 @@ app.post('/api/requestTrack', async (req: Request, res: Response) => {
 
 app.post('/api/login', login);
 
-app.get('/api/requests', authenticateJWT, async (req, res) => {
-  const list = await requests.getUnprocessedRequests();
-  res.json(list);
-});
 
+app.get('/api/requests', authenticateJWT, async (req, res) => {
+  try {
+    const status = (req.query.status as string) || 'unprocessed'; // 'unprocessed' | 'processed' | 'all'
+    const limit = Number(req.query.limit || 200);
+
+    const all = await requests.getRequests();
+
+    let list = all;
+    if (status === 'unprocessed') {
+      list = all.filter(r => !r.processedAt);
+    } else if (status === 'processed') {
+      list = all.filter(r => !!r.processedAt);
+    } // 'all' => no filtering
+
+    // newest first, by requestedAt (fallback to processedAt if needed)
+    list.sort((a, b) => {
+      const aTs = new Date((a as any).requestedAt ?? (a as any).processedAt ?? 0).getTime();
+      const bTs = new Date((b as any).requestedAt ?? (b as any).processedAt ?? 0).getTime();
+      return bTs - aTs;
+    });
+
+    res.json(limit ? list.slice(0, limit) : list);
+  } catch (e) {
+    console.error('Error fetching requests:', e);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
 app.delete('/api/requests/:id', authenticateJWT, async (req, res) => {
   const ok = await requests.deleteRequest(req.params.id);
   if (ok) {
