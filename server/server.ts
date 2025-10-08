@@ -13,7 +13,7 @@ import { SettingsDto } from '../shared/SettingsDto';
 function getClientIp(req: import('express').Request): string {
     const xff = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim();
     const raw = xff || req.socket.remoteAddress || (req as any).ip || 'unknown';
-    return raw.startsWith('::ffff:') ? raw.substring(7) : raw;
+    return raw && raw.startsWith('::ffff:') ? raw.substring(7) : raw;
 }
 
 

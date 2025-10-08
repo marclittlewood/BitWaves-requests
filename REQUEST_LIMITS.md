@@ -1,24 +1,15 @@
-# Request Limits (Per IP)
+# Request Limits & DO Build Fix
 
-This fork enforces **per-IP** request limits on the song request endpoint:
+- Enforces **per-IP** limits: **4/hour** and **20/24h** (rolling windows). Returns HTTP 429 when exceeded.
+- DigitalOcean App Platform build fix for Tailwind v4/Parcel:
+  - Added PostCSS plugin config in `client/package.json`:
+    ```json
+    {"postcss": {"plugins": {"@tailwindcss/postcss": {}}}}
+    ```
+  - `client/src/index.css` imports Tailwind via `@import "tailwindcss";`
 
-- **Max 4 requests per rolling hour**
-- **Max 20 requests per rolling 24 hours**
-
-If a client exceeds either limit, the server returns **HTTP 429** with a friendly JSON message.
-
-## Configuration
-
-Environment variables (optional; defaults shown):
-
+Optional env vars:
 ```
 MAX_REQUESTS_PER_HOUR=4
 MAX_REQUESTS_PER_DAY=20
 ```
-
-If you are behind a proxy/load balancer (NGINX, Cloudflare, etc.), the server is configured with `app.set('trust proxy', true)` and uses `X-Forwarded-For` where available to determine the real client IP.
-
-## Files changed
-
-- `server/Requests.ts`: Added rolling-window counters by IP (`getCountsByIp`) and ensured `requestedAt` and `ipAddress` are stored.
-- `server/server.ts`: Added per-IP limiter for `/api/requestTrack`, helper to normalize client IP, and `.env`-configurable limits.

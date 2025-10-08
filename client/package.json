@@ -1,6 +1,6 @@
 {
-  "name": "song-request-client",
-  "version": "1.0.0",
+  "name": "song-requests-per-ip-client",
+  "version": "1.1.0",
   "private": true,
   "dependencies": {
     "@tailwindcss/postcss": "^4.0.7",
@@ -22,5 +22,11 @@
     "build": "parcel build src/index.html",
     "watch": "parcel watch src/index.html",
     "clean": "rm -rf dist .parcel-cache"
-  }
+  },
+  "postcss": {
+    "plugins": {
+      "@tailwindcss/postcss": {}
+    }
+  },
+  "description": "Song Requests Client (Per-IP limited) \u2013 includes Tailwind v4 PostCSS fix for DO deployment"
 }
