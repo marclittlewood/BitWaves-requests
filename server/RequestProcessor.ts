@@ -39,7 +39,7 @@ export class RequestProcessor {
                     }
 
                     await this.requestAgent.requestTrack(request.trackGuid, item.breakNoteItemGuid, item.requestItemGuid, requestText);
-                    await this.requests.markAsProcessed(request.id);
+                    await this.requests.markProcessed(request.id);
                     availableItems.splice(availableItems.indexOf(item), 1);
                     processed = true;
 
