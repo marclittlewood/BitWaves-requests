@@ -1,6 +1,6 @@
 {
   "name": "song-requests-per-ip-client",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "dependencies": {
     "@tailwindcss/postcss": "^4.0.7",
@@ -28,5 +28,5 @@
       "@tailwindcss/postcss": {}
     }
   },
-  "description": "Song Requests Client (Per-IP limited) \u2013 includes Tailwind v4 PostCSS fix for DO deployment"
+  "description": "Song Requests Client \u2013 per-IP limits + Tailwind v4 PostCSS fix"
 }
