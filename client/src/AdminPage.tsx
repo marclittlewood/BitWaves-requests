@@ -1,66 +1,44 @@
-import React, { useState, useEffect } from 'react';
-
-const fmtDate = (iso?: string | Date) => iso ? new Date(iso).toLocaleString() : '';
+import React, { useState } from 'react';
 import { AdminRequestList } from './AdminRequestList';
 import { AdminLoginForm } from './AdminLoginForm';
 import { BlockedIPsAdmin } from './BlockedIPs';
 
 export function AdminPage() {
-    const storedToken = localStorage.getItem('admin_token');
-    const [isAuthenticated, setIsAuthenticated] = useState(storedToken !== null);
-    const [token, setToken] = useState<string | null>(storedToken);
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
+  const storedToken = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
+  const [token, setToken] = useState<string | null>(storedToken);
+  const isAuthenticated = !!token;
 
-    const handleLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError('');
-        setIsLoading(true);
-        
-        try {
-            const response = await fetch('/api/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ password }),
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok && data.success) {
-                localStorage.setItem('admin_token', data.token);
-                setToken(data.token);
-                setIsAuthenticated(true);
-            } else {
-                setError(data.message || 'Login failed');
-            }
-        } catch (err) {
-            setError('An error occurred. Please try again.');
-        } finally {
-            setIsLoading(false);
-        }
-    };
+  const handleLoggedIn = (newToken: string) => {
+    localStorage.setItem('admin_token', newToken);
+    setToken(newToken);
+  };
 
-    const handleLogout = () => {
-        localStorage.removeItem('admin_token');
-        setToken(null);
-        setIsAuthenticated(false);
-        setPassword('');
-    };
+  const handleLogout = () => {
+    localStorage.removeItem('admin_token');
+    setToken(null);
+  };
 
-    if (!isAuthenticated) {
-        return (
-            <AdminLoginForm
-                error={error}
-                password={password}
-                isLoading={isLoading}
-                onPasswordChange={setPassword}
-                onSubmit={handleLogin}
-            />
-        );
-    }
+  if (!isAuthenticated) {
+    return (
+      <div className="container">
+        <h2>Admin Login</h2>
+        <AdminLoginForm onLoggedIn={handleLoggedIn} />
+      </div>
+    );
+  }
 
-    return <AdminRequestList token={token} onLogout={handleLogout} />;
-} 
+  return (
+    <div className="container">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2>Admin</h2>
+        <button onClick={handleLogout}>Log out</button>
+      </div>
+
+      {/* Existing Requests admin table */}
+      <AdminRequestList token={token!} />
+
+      {/* New: Blocked IPs section */}
+      <BlockedIPsAdmin token={token!} />
+    </div>
+  );
+}
