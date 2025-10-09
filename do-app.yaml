@@ -7,7 +7,7 @@ spec:
         repo: marclittlewood/BitWaves-requests
         branch: main
         deploy_on_push: true
-      build_command: "npm install --prefix server && npm run build --prefix client"
+      build_command: "npm install --prefix server && npm install --prefix client && npm run build --prefix client"
       run_command: "npm start --prefix server"
       environment_slug: node-js
       instance_size_slug: basic-xxs
@@ -16,10 +16,13 @@ spec:
         - path: /
       envs:
         - key: PLAYIT_LIVE_BASE_URL
+          value: "https://njf32r.playitradio.com:25433/"
           scope: RUN_AND_BUILD_TIME
         - key: PLAYIT_LIVE_API_KEY
+          value: "ebc1e60bc8414bc5bf9138843e5b25d6"
           scope: RUN_AND_BUILD_TIME
         - key: ADMIN_PASSWORD
+          value: "bitwaves2020"
           scope: RUN_AND_BUILD_TIME
         - key: REQUESTABLE_TRACK_GROUP_NAME
           value: "Requests"
@@ -34,6 +37,7 @@ spec:
           value: "20"
           scope: RUN_AND_BUILD_TIME
         - key: JWT_SECRET
+          value: "change-me-to-a-long-random-string"
           scope: RUN_AND_BUILD_TIME
       volumes:
         - name: bitwaves-data
