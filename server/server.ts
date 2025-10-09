@@ -6,7 +6,6 @@ import { Requests } from './Requests';
 import { PlayItLiveApiClient } from './PlayItLiveApiClient';
 import { RequestProcessor } from './RequestProcessor';
 import { RequestAgent } from "./RequestAgent";
-import { BlockedIPs } from './BlockedIPs';
 import { authenticateJWT, login } from './auth';
 import { SettingsDto } from '../shared/SettingsDto';
 
@@ -18,10 +17,6 @@ const app = express();
 app.set('trust proxy', true);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../client/dist')));
-
-const dataDir = process.env.DATA_DIR ? process.env.DATA_DIR : path.join(__dirname, '../data');
-const blockedIPs = new BlockedIPs(dataDir);
-
 
 const PORT = Number(process.env.PORT || 3000);
 const MAX_REQUESTS_PER_HOUR = Number(process.env.MAX_REQUESTS_PER_HOUR || 4);
@@ -70,8 +65,6 @@ app.post('/api/requestTrack', async (req: Request, res: Response) => {
   try {
     const { trackGuid, requestedBy, message } = req.body || {};
     const clientIp = getClientIp(req);
-
-    if (blockedIPs.isBlocked(clientIp)) { res.status(403).json({ success: false, message: 'Requests from your network are temporarily disabled.' }); return; }
 
     const messageString = (message ?? '').toString();
     const trimmedMessage = messageString.slice(0, MAX_MESSAGE_LENGTH);
@@ -136,21 +129,6 @@ app.delete('/api/requests/:id', authenticateJWT, async (req, res) => {
   } else {
     res.status(404).json({ success: false, message: 'Request not found' });
   }
-});
-
-// --- Blocked IPs admin (protected) ---
-app.get('/api/admin/blocked-ips', authenticateJWT, (req, res) => {
-  res.json({ ok: true, items: blockedIPs.list() });
-});
-app.post('/api/admin/blocked-ips', authenticateJWT, (req, res) => {
-  const { ip, reason } = req.body || {};
-  if (!ip) { res.status(400).json({ ok: false, message: 'IP is required' }); return; }
-  blockedIPs.add(String(ip).trim(), String(reason||'').trim(), 'admin');
-  res.json({ ok: true });
-});
-app.delete('/api/admin/blocked-ips/:ip', authenticateJWT, (req, res) => {
-  blockedIPs.remove(decodeURIComponent(req.params.ip));
-  res.json({ ok: true });
 });
 
 app.get('*', (req, res) => {

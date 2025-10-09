@@ -39,14 +39,3 @@ npm start --prefix server
 
 ---
 Happy requesting!
-
-
-## IP Blocklist (Admin)
-- Add / remove IPs under **Admin → Blocked IPs**
-- Enforced in `/api/requestTrack` before rate-limits
-- Persisted to `data/blocked_ips.json` (mount a volume and set `DATA_DIR` for persistence)
-
-### DigitalOcean App Platform
-- **Build Command:** `npm install --prefix server && npm run build --prefix client`
-- **Run Command:** `npm start --prefix server`
-- Set env vars in the dashboard (do not commit secrets)
