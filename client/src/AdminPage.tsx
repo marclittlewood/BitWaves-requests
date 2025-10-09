@@ -1,6 +1,5 @@
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { AdminLoginForm } from './AdminLoginForm';
+import React, { useEffect, useState } from 'react';
 import { BlockedIPsAdmin } from './BlockedIPs';
 
 type AuthState = 'unknown' | 'authed' | 'unauth';
@@ -24,9 +23,13 @@ export function AdminPage() {
   });
   const [authState, setAuthState] = useState<AuthState>('unknown');
   const [note, setNote] = useState<string>('');
-  const [requests, setRequests] = useState<RequestRow[] | null>(null);
-  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string>('');
+  const [requests, setRequests] = useState<RequestRow[] | null>(null);
+
+  // Embedded login form state
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState<string>('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Verify token by calling a protected endpoint
   useEffect(() => {
@@ -38,7 +41,7 @@ export function AdminPage() {
         const res = await fetch('/api/admin/blocked-ips', { headers: { Authorization: `Bearer ${token}` }});
         if (abort) return;
         if (res.status === 401 || res.status === 403) {
-          localStorage.removeItem('admin_token');
+          try { localStorage.removeItem('admin_token'); } catch {}
           setToken(null);
           setAuthState('unauth');
           return;
@@ -52,61 +55,70 @@ export function AdminPage() {
     return () => { abort = true; };
   }, [token]);
 
-  // Load requests list
-  const loadRequests = async () => {
+  async function loadRequests() {
     if (!token) return;
-    setLoading(true); setErr('');
+    setErr('');
     try {
       const res = await fetch('/api/requests', { headers: { Authorization: `Bearer ${token}` } });
-      // Fallback: if server returns HTML (not JSON), throw a readable error
       const ct = res.headers.get('content-type') || '';
-      if (!ct.includes('application/json')) {
-        throw new Error(`Unexpected response (${res.status}). Is the requests endpoint protected and returning JSON?`);
-      }
+      if (!ct.includes('application/json')) throw new Error(`Unexpected response (${res.status})`);
       const data = await res.json();
-      // Accept {items: [...] } or plain array
       const arr = Array.isArray(data) ? data : (data.items || []);
       setRequests(arr);
     } catch (e: any) {
       setErr(e?.message || 'Failed to load requests');
-    } finally {
-      setLoading(false);
     }
-  };
+  }
+  useEffect(() => { if (authState === 'authed') loadRequests(); }, [authState]);
 
-  useEffect(() => {
-    if (authState === 'authed') loadRequests();
-  }, [authState]);
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError('');
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success || !data?.token) {
+        throw new Error(data?.message || 'Login failed');
+      }
+      try { localStorage.setItem('admin_token', data.token); } catch {}
+      setToken(data.token);
+      setAuthState('authed');
+      setPassword('');
+      setLoginError('');
+      setNote('Logged in successfully.');
+    } catch (e: any) {
+      setLoginError(e?.message || 'Login failed');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  }
 
-  const handleLoggedIn = (newToken: string) => {
-    try { localStorage.setItem('admin_token', newToken); } catch {}
-    setToken(newToken);
-    setAuthState('authed');
-  };
-
-  const handleLogout = () => {
+  function handleLogout() {
     try { localStorage.removeItem('admin_token'); } catch {}
     setToken(null);
     setAuthState('unauth');
-  };
+    setRequests(null);
+  }
 
-  const handleDelete = async (id: string) => {
+  async function handleDelete(id: string) {
     if (!confirm('Delete this request?')) return;
     if (!token) return;
-    try {
-      const res = await fetch(`/api/requests/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => null);
-        throw new Error(j?.message || `Failed with ${res.status}`);
-      }
-      setRequests(prev => (prev || []).filter(r => r.id !== id));
-    } catch (e: any) {
-      alert(e?.message || 'Failed to delete');
+    const res = await fetch(`/api/requests/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => null);
+      alert(j?.message || `Failed with ${res.status}`);
+      return;
     }
-  };
+    setRequests(prev => (prev || []).filter(r => r.id !== id));
+  }
 
   if (authState === 'unknown') {
     return <div className="container"><h2>Admin</h2><div>Checking your session…</div></div>;
@@ -116,7 +128,23 @@ export function AdminPage() {
     return (
       <div className="container">
         <h2>Admin Login</h2>
-        <AdminLoginForm onLoggedIn={handleLoggedIn} />
+        <form onSubmit={handleLogin} style={{ maxWidth: 360 }}>
+          <label htmlFor="admin-password">Admin password</label>
+          <input
+            id="admin-password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Enter admin password"
+            required
+          />
+          <div style={{ marginTop: 8 }}>
+            <button type="submit" disabled={isLoggingIn || !password}>
+              {isLoggingIn ? 'Logging in…' : 'Login'}
+            </button>
+          </div>
+          {loginError && <div className="error" style={{ marginTop: 8, color: '#b00' }}>{loginError}</div>}
+        </form>
       </div>
     );
   }
@@ -134,10 +162,9 @@ export function AdminPage() {
       <section className="card" style={{ marginTop: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3>Song Requests</h3>
-          <button onClick={loadRequests} disabled={loading}>Refresh</button>
+          <button onClick={() => loadRequests()}>Refresh</button>
         </div>
         {err && <div className="error" style={{ color: '#b00' }}>{err}</div>}
-        {loading && <div>Loading…</div>}
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
@@ -159,19 +186,16 @@ export function AdminPage() {
                 <td>{fmt(r.requestedAt)}</td>
                 <td>{r.ipAddress || ''}</td>
                 <td>{fmt(r.processedAt)}</td>
-                <td>
-                  <button onClick={() => handleDelete(r.id)}>Delete</button>
-                </td>
+                <td><button onClick={() => handleDelete(r.id)}>Delete</button></td>
               </tr>
             ))}
-            {(!requests || requests.length === 0) && !loading && (
+            {(!requests || requests.length === 0) && (
               <tr><td colSpan={7}>No requests yet</td></tr>
             )}
           </tbody>
         </table>
       </section>
 
-      {/* Blocked IPs panel */}
       <BlockedIPsAdmin token={token!} />
     </div>
   );
