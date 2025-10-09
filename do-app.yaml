@@ -1,0 +1,46 @@
+spec:
+  name: bitwaves-requests
+  region: syd1
+  services:
+    - name: bitwaves-requests-server
+      github:
+        repo: marclittlewood/BitWaves-requests
+        branch: main
+        deploy_on_push: true
+      build_command: "npm install --prefix server && npm run build --prefix client"
+      run_command: "npm start --prefix server"
+      environment_slug: node-js
+      instance_size_slug: basic-xxs
+      http_port: 3000
+      routes:
+        - path: /
+      envs:
+        # ⚠️ Set the values securely in DigitalOcean (do not commit secrets)
+        - key: PLAYIT_LIVE_BASE_URL
+          scope: RUN_AND_BUILD_TIME
+        - key: PLAYIT_LIVE_API_KEY
+          scope: RUN_AND_BUILD_TIME
+        - key: ADMIN_PASSWORD
+          scope: RUN_AND_BUILD_TIME
+        - key: REQUESTABLE_TRACK_GROUP_NAME
+          value: "Requests"
+          scope: RUN_AND_BUILD_TIME
+        # Recommended extras
+        - key: DATA_DIR
+          value: "/app/data"
+          scope: RUN_AND_BUILD_TIME
+        - key: MAX_REQUESTS_PER_HOUR
+          value: "4"
+          scope: RUN_AND_BUILD_TIME
+        - key: MAX_REQUESTS_PER_DAY
+          value: "20"
+          scope: RUN_AND_BUILD_TIME
+        # Optional but recommended so admin tokens survive restarts
+        - key: JWT_SECRET
+          scope: RUN_AND_BUILD_TIME
+      volumes:
+        - name: bitwaves-data
+          mount_path: /app/data
+  volumes:
+    - name: bitwaves-data
+      size_gigabytes: 1
