@@ -15,7 +15,6 @@ spec:
       routes:
         - path: /
       envs:
-        # ⚠️ Set the values securely in DigitalOcean (do not commit secrets)
         - key: PLAYIT_LIVE_BASE_URL
           scope: RUN_AND_BUILD_TIME
         - key: PLAYIT_LIVE_API_KEY
@@ -25,7 +24,6 @@ spec:
         - key: REQUESTABLE_TRACK_GROUP_NAME
           value: "Requests"
           scope: RUN_AND_BUILD_TIME
-        # Recommended extras
         - key: DATA_DIR
           value: "/app/data"
           scope: RUN_AND_BUILD_TIME
@@ -35,7 +33,6 @@ spec:
         - key: MAX_REQUESTS_PER_DAY
           value: "20"
           scope: RUN_AND_BUILD_TIME
-        # Optional but recommended so admin tokens survive restarts
         - key: JWT_SECRET
           scope: RUN_AND_BUILD_TIME
       volumes:

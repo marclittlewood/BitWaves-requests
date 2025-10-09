@@ -71,11 +71,7 @@ app.post('/api/requestTrack', async (req: Request, res: Response) => {
     const { trackGuid, requestedBy, message } = req.body || {};
     const clientIp = getClientIp(req);
 
-    // Blocked IP check
-    if (blockedIPs.isBlocked(clientIp)) {
-      res.status(403).json({ success: false, message: 'Requests from your network are temporarily disabled.' });
-      return;
-    }
+    if (blockedIPs.isBlocked(clientIp)) { res.status(403).json({ success: false, message: 'Requests from your network are temporarily disabled.' }); return; }
 
     const messageString = (message ?? '').toString();
     const trimmedMessage = messageString.slice(0, MAX_MESSAGE_LENGTH);
@@ -142,22 +138,18 @@ app.delete('/api/requests/:id', authenticateJWT, async (req, res) => {
   }
 });
 
-
 // --- Blocked IPs admin (protected) ---
 app.get('/api/admin/blocked-ips', authenticateJWT, (req, res) => {
   res.json({ ok: true, items: blockedIPs.list() });
 });
-
 app.post('/api/admin/blocked-ips', authenticateJWT, (req, res) => {
   const { ip, reason } = req.body || {};
   if (!ip) { res.status(400).json({ ok: false, message: 'IP is required' }); return; }
-  blockedIPs.add(ip.trim(), (reason || '').trim(), 'admin');
+  blockedIPs.add(String(ip).trim(), String(reason||'').trim(), 'admin');
   res.json({ ok: true });
 });
-
 app.delete('/api/admin/blocked-ips/:ip', authenticateJWT, (req, res) => {
-  const ip = decodeURIComponent(req.params.ip);
-  blockedIPs.remove(ip);
+  blockedIPs.remove(decodeURIComponent(req.params.ip));
   res.json({ ok: true });
 });
 
