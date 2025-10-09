@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 const fmtDate = (iso?: string | Date) => iso ? new Date(iso).toLocaleString() : '';
 import { AdminRequestList } from './AdminRequestList';
 import { AdminLoginForm } from './AdminLoginForm';
+import { BlockedIPsAdmin } from './BlockedIPs';
 
 export function AdminPage() {
     const storedToken = localStorage.getItem('admin_token');
