@@ -2,33 +2,54 @@ import { RequestAgent } from "./RequestAgent";
 import { Requests } from "./Requests";
 
 export class RequestProcessor {
-  private timer: any;
+    constructor(private requests: Requests, private requestAgent: RequestAgent) {
+        this.requests = requests;
 
-  constructor(private requests: Requests, private requestAgent: RequestAgent) {
-    this.timer = setInterval(() => this.processRequests().catch(()=>{}), 10000);
-    this.processRequests().catch(()=>{});
-  }
+        // process requests every 10 seconds
+        setInterval(() => {
+            this.processRequests();
+        }, 10000);
 
-  async processRequests() {
-    // Try to process as many pending requests as we have available slots
-    let availableItems = await this.requestAgent.getAvailableItems();
-    while (availableItems.length > 0) {
-      const next = this.requests.getNextPending();
-      if (!next) break;
-
-      // Who requested?
-      const requestText = next.requestedBy || 'Anonymous';
-
-      // Grab the first available slot
-      const item = availableItems.shift();
-      if (!item) break;
-
-      // Send to PlayIt Live
-      await this.requestAgent.requestTrack(next.trackGuid, item.breakNoteItemGuid, item.requestItemGuid, requestText);
-
-      // Mark processed
-      this.requests.markProcessed(next.id);
-      console.log('Processed request:', next);
+        this.processRequests();
     }
-  }
+
+    async processRequests() {
+
+        const availableItems = await this.requestAgent.getAvailableItems();
+
+        const requests = await this.requests.getUnprocessedRequests();
+
+        console.log('Available request slots:', availableItems.length);
+        console.log('Unprocessed requests:', requests.length);
+
+        for (const request of requests) {
+            console.log('Processing request:', request);
+
+            let processed = false;
+            for (const item of availableItems) {
+                if (processed) {
+                    break;
+                }
+
+                if (await this.requestAgent.canRequestTrack(request.trackGuid, item.requestItemGuid)) {
+
+                    let requestText = request.requestedBy;
+                    if(request.message) {
+                        requestText += `: ${request.message}`;
+                    }
+
+                    await this.requestAgent.requestTrack(request.trackGuid, item.breakNoteItemGuid, item.requestItemGuid, requestText);
+                    await this.requests.markProcessed(request.id);
+                    availableItems.splice(availableItems.indexOf(item), 1);
+                    processed = true;
+
+                    console.log('Processed request:', request);
+                }
+            }
+
+            if (!processed) {
+                console.log('No available items found for request:', request);
+            }
+        }
+    }
 }
