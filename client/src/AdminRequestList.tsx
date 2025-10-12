@@ -19,10 +19,6 @@ type ApiRequestsGrouped = {
   processed?: RequestItem[];
 };
 
-function cx(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(' ');
-}
-
 async function fetchJSON(url: string, token: string | null) {
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -55,10 +51,9 @@ const styles = {
   th: { textAlign: 'left' as const, padding: '14px 16px', fontWeight: 700 as const, borderBottom: '1px solid #d1d5db', background: '#f9fafb' },
   td: { padding: '12px 16px', borderBottom: '1px solid #e5e7eb', verticalAlign: 'top' as const },
   titleCell: { fontWeight: 600 as const, maxWidth: 360, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' as const },
-  chipRow: { display: 'flex', gap: 8, flexWrap: 'wrap' as const, color: '#111827' },
-  chip: { background: '#f3f4f6', padding: '3px 8px', borderRadius: 999, fontSize: 12 },
   msg: { maxWidth: 340, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' as const },
-  actions: { display: 'flex', gap: 8, flexWrap: 'wrap' as const },
+  actionsRow: { background: '#fcfcfd' },
+  actionsWrap: { display: 'flex', gap: 10, flexWrap: 'wrap' as const },
   btn: { border: 'none', color: '#fff', padding: '8px 12px', borderRadius: 10, cursor: 'pointer' },
   btnDelete: { background: '#F4320B' },
   btnHold: { background: '#F48B0B' },
@@ -131,67 +126,72 @@ export function AdminRequestList({ token, onLogout }: { token: string | null; on
   const doProcess = async (id: string) => { await postJSON(`/api/requests/${id}/process`, token); await load(); };
   const doDelete = async (id: string) => { await postJSON(`/api/requests/${id}`, token, 'DELETE'); await load(); };
 
-  const renderTable = (items: RequestItem[], includeActions: boolean) => (
-    <div style={styles.tableWrap as React.CSSProperties}>
-      <table style={styles.table as React.CSSProperties}>
-        <thead>
-          <tr>
-            <th style={{...styles.th, width: '26%'}}>Song</th>
-            <th style={{...styles.th, width: '12%'}}>Requested By</th>
-            <th style={{...styles.th, width: '18%'}}>Message</th>
-            <th style={{...styles.th, width: '14%'}}>Requested Time</th>
-            <th style={{...styles.th, width: '12%'}}>IP Address</th>
-            <th style={{...styles.th, width: '14%'}}>Processed Time</th>
-            <th style={{...styles.th, width: '8%'}}>Status</th>
-            {includeActions ? <th style={{...styles.th, width: '16%'}}>Actions</th> : null}
-          </tr>
-        </thead>
-        <tbody>
-          {items.length === 0 ? (
+  const renderTable = (items: RequestItem[], includeActions: boolean) => {
+    const colCount = 7; // Song, Requested By, Message, Requested Time, IP Address, Processed Time, Status
+    return (
+      <div style={styles.tableWrap as React.CSSProperties}>
+        <table style={styles.table as React.CSSProperties}>
+          <thead>
             <tr>
-              <td style={{...styles.td, padding: '18px 16px'}} colSpan={includeActions ? 8 : 7}>
-                <span style={{ color: 'rgba(0,0,0,.55)' }}>No items.</span>
-              </td>
+              <th style={{...styles.th, width: '26%'}}>Song</th>
+              <th style={{...styles.th, width: '12%'}}>Requested By</th>
+              <th style={{...styles.th, width: '18%'}}>Message</th>
+              <th style={{...styles.th, width: '14%'}}>Requested Time</th>
+              <th style={{...styles.th, width: '12%'}}>IP Address</th>
+              <th style={{...styles.th, width: '14%'}}>Processed Time</th>
+              <th style={{...styles.th, width: '8%'}}>Status</th>
             </tr>
-          ) : items.map((r) => (
-            <tr key={r.id}>
-              <td style={{...styles.td}}>
-                <div style={styles.titleCell as React.CSSProperties}>{label(r)}</div>
-              </td>
-              <td style={styles.td}>{r.requestedBy || '—'}</td>
-              <td style={{...styles.td}}>
-                <div style={styles.msg as React.CSSProperties}>{r.message || '—'}</div>
-              </td>
-              <td style={styles.td}>{fmt(r.requestedAt)}</td>
-              <td style={styles.td}>{r.ipAddress || '—'}</td>
-              <td style={styles.td}>{fmt(r.processedAt)}</td>
-              <td style={styles.td}>{r.status ? r.status[0].toUpperCase() + r.status.slice(1) : (r.processedAt ? 'Processed' : 'Pending')}</td>
-              {includeActions ? (
-                <td style={styles.td}>
-                  <div style={styles.actions as React.CSSProperties}>
-                    <button onClick={()=>doDelete(r.id)} style={{...styles.btn, ...styles.btnDelete}}>Delete</button>
-                    {((r as any).status === 'held' || (r as any).held) ? (
-                      <button onClick={()=>doUnhold(r.id)} style={{...styles.btn, ...styles.btnHold}}>Release</button>
-                    ) : (
-                      <button onClick={()=>doHold(r.id)} style={{...styles.btn, ...styles.btnHold}}>Hold</button>
-                    )}
-                    <button onClick={()=>doProcess(r.id)} style={{...styles.btn, ...styles.btnProcess}}>Process</button>
-                  </div>
+          </thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr>
+                <td style={{...styles.td, padding: '18px 16px'}} colSpan={colCount}>
+                  <span style={{ color: 'rgba(0,0,0,.55)' }}>No items.</span>
                 </td>
-              ) : null}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+              </tr>
+            ) : items.map((r) => (
+              <React.Fragment key={r.id}>
+                <tr>
+                  <td style={{...styles.td}}>
+                    <div style={styles.titleCell as React.CSSProperties}>{label(r)}</div>
+                  </td>
+                  <td style={styles.td}>{r.requestedBy || '—'}</td>
+                  <td style={styles.td}>
+                    <div style={styles.msg as React.CSSProperties}>{r.message || '—'}</div>
+                  </td>
+                  <td style={styles.td}>{fmt(r.requestedAt)}</td>
+                  <td style={styles.td}>{r.ipAddress || '—'}</td>
+                  <td style={styles.td}>{fmt(r.processedAt)}</td>
+                  <td style={styles.td}>{(r as any).status ? ((r as any).status[0].toUpperCase() + (r as any).status.slice(1)) : (r.processedAt ? 'Processed' : 'Pending')}</td>
+                </tr>
+                {includeActions && (
+                  <tr style={styles.actionsRow as React.CSSProperties}>
+                    <td style={{...styles.td}} colSpan={colCount}>
+                      <div style={styles.actionsWrap as React.CSSProperties}>
+                        <button onClick={()=>doDelete(r.id)} style={{...styles.btn, ...styles.btnDelete}}>Delete</button>
+                        {((r as any).status === 'held' || (r as any).held) ? (
+                          <button onClick={()=>doUnhold(r.id)} style={{...styles.btn, ...styles.btnHold}}>Release</button>
+                        ) : (
+                          <button onClick={()=>doHold(r.id)} style={{...styles.btn, ...styles.btnHold}}>Hold</button>
+                        )}
+                        <button onClick={()=>doProcess(r.id)} style={{...styles.btn, ...styles.btnProcess}}>Process</button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
 
   const totals = { pending: pending.length, held: held.length, processed: processed.length };
 
   return (
     <div style={styles.page}>
       <div style={styles.wrap as React.CSSProperties}>
-        {/* Top brand + counts + logout */}
         <div style={styles.topBar}>
           <div style={styles.brand}>Song Requests</div>
           <div style={{display:'flex', alignItems:'center', gap: 24}}>
@@ -206,21 +206,18 @@ export function AdminRequestList({ token, onLogout }: { token: string | null; on
 
         <h1 style={styles.h1}>Song Requests (Admin)</h1>
 
-        {/* Pending */}
         <div style={styles.sectionHead}>
           <div style={styles.sectionTitle}>Pending Requests</div>
           <div style={styles.itemsCount}>{pending.length} items</div>
         </div>
         {renderTable(pending, true)}
 
-        {/* Held */}
         <div style={styles.sectionHead}>
           <div style={styles.sectionTitle}>Held Requests</div>
           <div style={styles.itemsCount}>{held.length} items</div>
         </div>
         {renderTable(held, true)}
 
-        {/* Processed */}
         <div style={styles.sectionHead}>
           <div style={styles.sectionTitle}>Processed Requests</div>
           <div style={styles.itemsCount}>{processed.length} items</div>
