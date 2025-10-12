@@ -7,12 +7,10 @@ export class Requests {
   private requests: RequestDto[] = [];
 
   async init() {
-    // No-op init; keep for compatibility with server bootstrap
+    // No-op for compatibility; could hydrate from storage in the future.
     return;
   }
 
-
-  // Add a request; ensures IP and timestamp are captured; defaults to pending + 5min delay
   async addRequest(trackGuid: string, requestedBy: string, message?: string, ipAddress?: string) {
     const now = new Date();
     const req: RequestDto = {
@@ -29,7 +27,6 @@ export class Requests {
     return req;
   }
 
-  // Return requests, optionally filtered by status, newest-first
   async getRequests(status: 'all' | RequestStatus = 'all', limit: number = 200) {
     let list = this.requests.slice();
     if (status !== 'all') {
@@ -41,7 +38,6 @@ export class Requests {
   async deleteRequest(id: string) {
     const req = this.requests.find(r => r.id === id);
     if (!req) return false;
-    // mark deleted, keep in memory for audit (can be filtered out by client if desired)
     req.status = 'deleted';
     return true;
   }
@@ -56,7 +52,6 @@ export class Requests {
   async unholdRequest(id: string) {
     const req = this.requests.find(r => r.id === id);
     if (!req) return false;
-    // resume pending and set a fresh 5-minute delay from now
     const now = new Date();
     req.status = 'pending';
     req.autoProcessAt = new Date(now.getTime() + AUTO_PROCESS_DELAY_MS);
@@ -66,9 +61,22 @@ export class Requests {
   async forceProcessNow(id: string) {
     const req = this.requests.find(r => r.id === id);
     if (!req) return false;
-    // Allow immediate processing by the processor loop
     req.status = 'pending';
+    // Make it immediately eligible
     req.autoProcessAt = new Date(Date.now() - 1000);
+    return true;
+  }
+
+  async setProcessing(id: string, isProcessing: boolean) {
+    const req = this.requests.find(r => r.id === id);
+    if (!req) return false;
+    // Only allow claiming when currently pending
+    if (isProcessing) {
+      if (req.status !== 'pending') return false;
+      req.status = 'processing';
+    } else {
+      if (req.status === 'processing') req.status = 'pending';
+    }
     return true;
   }
 
@@ -77,16 +85,17 @@ export class Requests {
     if (!req) return false;
     req.status = 'processed';
     req.processedAt = new Date();
+    // Push eligibility far out to avoid any accidental re-pickup
+    req.autoProcessAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
     return true;
   }
 
-  // Internal: eligible requests that can be processed automatically
   async getAutoProcessEligible(): Promise<RequestDto[]> {
     const now = Date.now();
     return this.requests.filter(r => r.status === 'pending' && new Date(r.autoProcessAt).getTime() <= now);
   }
 
-  // Helpers for rate limiting by IP, rolling windows
+  // Simple counts for moderation tools (kept from earlier versions)
   private countInWindowByIp(ipAddress: string, windowMs: number): number {
     const now = Date.now();
     return this.requests.filter(r => {
@@ -96,7 +105,6 @@ export class Requests {
     }).length;
   }
 
-  // Public helper to fetch counts for current hour/day (rolling windows)
   async getCountsByIp(ipAddress: string) {
     const perHour = this.countInWindowByIp(ipAddress, 60 * 60 * 1000);
     const perDay  = this.countInWindowByIp(ipAddress, 24 * 60 * 60 * 1000);
