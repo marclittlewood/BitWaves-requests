@@ -1,5 +1,3 @@
-export type RequestStatus = 'pending' | 'processing' | 'held' | 'processed' | 'deleted';
-
 export interface RequestDto {
   id: string;
   trackGuid: string;
@@ -8,6 +6,4 @@ export interface RequestDto {
   ipAddress?: string;
   requestedAt: Date;
   processedAt?: Date;
-  status: RequestStatus;
-  autoProcessAt: Date;
 }

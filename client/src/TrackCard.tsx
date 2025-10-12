@@ -3,28 +3,6 @@ import { TrackDto } from '../../shared/TrackDto';
 import useLocalStorage from './hooks/useLocalStorage';
 import { useSettingsQuery } from './queries/Settings';
 
-
-function formatCooldownMessage(nextAllowedAt?: string | Date, fallbackHours?: number) {
-    try {
-        const now = new Date();
-        const target = nextAllowedAt ? new Date(nextAllowedAt) : null;
-        if (target && target > now) {
-            const ms = target.getTime() - now.getTime();
-            const hours = Math.floor(ms / 3600000);
-            const mins = Math.ceil((ms % 3600000) / 60000);
-            const parts = [];
-            if (hours) parts.push(`${hours} hour${hours===1?'':'s'}`);
-            if (mins) parts.push(`${mins} min`);
-            const when = target.toLocaleString();
-            const approx = parts.length ? ` (~${parts.join(' ')})` : '';
-            return `That song was requested recently. You can request it again after ${when}${approx}.`;
-        }
-        if (fallbackHours) {
-            return `That song was requested recently. Please try again in about ${fallbackHours} hours.`;
-        }
-    } catch {}
-    return 'That song was requested recently. Please try again later.';
-}
 export function TrackCard({ track }: { track: TrackDto }) {
     const [showConfirm, setShowConfirm] = useState(false);
     const [requesterName, setRequesterName] = useLocalStorage<string>('songRequestName', '');
@@ -74,14 +52,19 @@ export function TrackCard({ track }: { track: TrackDto }) {
                 setShowConfirm(false);
                 setRequesterMessage(''); // Clear message for next request
             } else if (response.status === 429) {
-                return response.json().then(data => {
-                    if (data?.error === 'COOLDOWN_ACTIVE') {
-                        setErrorMessage(formatCooldownMessage(data.nextAllowedAt, data.cooldownHours));
-                    } else {
-                        setErrorMessage('That song was requested recently. Please try again later.');
-                    }
-                });
-            } else if (response.status === 409) {
+            const data = await response.json().catch(() => ({}));
+            if (data?.error === 'COOLDOWN_ACTIVE') {
+              const when = data.nextAllowedAt ? new Date(data.nextAllowedAt).toLocaleString() : 'later';
+              setErrorMessage(`That song was requested recently. You can request it again after ${when}.`);
+            } else if (data?.error === 'TOO_MANY_REQUESTS') {
+              const when = data.nextAllowedAt ? new Date(data.nextAllowedAt).toLocaleString() : 'later';
+              const scope = data.window === 'hour' ? 'this hour' : 'today';
+              const limit = typeof data.limit === 'number' ? ` (limit: ${data.limit} per ${scope})` : '';
+              setErrorMessage(`You’ve reached the request limit${limit}. Try again after ${when}.`);
+            } else {
+              setErrorMessage('You’ve hit a limit. Please try again later.');
+            }
+          } else if (response.status === 409) {
                 // Song is already requested
                 return response.json().then(data => {
                     setErrorMessage(data.message || 'This song has already been requested recently.');

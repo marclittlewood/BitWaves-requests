@@ -62,23 +62,28 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.post('/api/requestTrack', async (req: Request, res: Response) => {
+  // Per-IP rate limit (distinct from per-track cooldown)
+  try {
+    const ipAddress = getClientIp(req);
+    const maxPerHour = Number(process.env.REQUESTS_PER_HOUR ?? 3);
+    const maxPerDay  = Number(process.env.REQUESTS_PER_DAY  ?? 12);
+    const rl = requests.isRateLimited(ipAddress, maxPerHour, maxPerDay);
+    if (rl.blocked) {
+      res.status(429).json({
+        success: false,
+        error: 'TOO_MANY_REQUESTS',
+        window: rl.window,
+        limit: rl.limit,
+        nextAllowedAt: rl.nextAllowedAt
+      });
+      return;
+    }
+  } catch (e) {
+    console.error('Rate limit check error', e);
+  }
+
   try {
     const { trackGuid, requestedBy, message } = req.body || {};
-
-    // Per-track cooldown (default 6 hours; override with env REQUEST_TRACK_COOLDOWN_HOURS)
-    try {
-      const hours = Number(process.env.REQUEST_TRACK_COOLDOWN_HOURS || 6);
-      const cooldownMs = hours * 60 * 60 * 1000;
-      if (trackGuid) {
-        const cd = requests.isWithinCooldown(trackGuid, cooldownMs);
-        if (cd.blocked) {
-          res.status(429).json({ success: false, error: 'COOLDOWN_ACTIVE', cooldownHours: hours, nextAllowedAt: cd.nextAllowedAt });
-          return;
-        }
-      }
-    } catch (e) {
-      console.error('Cooldown check error', e);
-    }
     const clientIp = getClientIp(req);
 
     const messageString = (message ?? '').toString();
@@ -99,7 +104,7 @@ app.post('/api/requestTrack', async (req: Request, res: Response) => {
       return;
     }
 
-    await requests.addRequest(trackGuid, requestedBy, trimmedMessage, clientIp);
+    await requests.addRequest(trackGuid, requestedBy, trimmedMessage, clientIp, ipAddress);
     res.json({ success: true });
   } catch (error) {
     console.error('Error processing request:', error);
@@ -144,26 +149,6 @@ app.delete('/api/requests/:id', authenticateJWT, async (req, res) => {
   } else {
     res.status(404).json({ success: false, message: 'Request not found' });
   }
-});
-
-
-// --- Admin request workflow endpoints (Hold / Unhold / Process Now) ---
-app.post('/api/requests/:id/hold', authenticateJWT, async (req: Request, res: Response) => {
-  const ok = await requests.holdRequest(req.params.id);
-  if (!ok) { res.status(404).json({ success: false, message: 'Request not found' }); return; }
-  res.json({ success: true });
-});
-
-app.post('/api/requests/:id/unhold', authenticateJWT, async (req: Request, res: Response) => {
-  const ok = await requests.unholdRequest(req.params.id);
-  if (!ok) { res.status(404).json({ success: false, message: 'Request not found' }); return; }
-  res.json({ success: true });
-});
-
-app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res: Response) => {
-  const ok = await requests.forceProcessNow(req.params.id);
-  if (!ok) { res.status(404).json({ success: false, message: 'Request not found' }); return; }
-  res.json({ success: true });
 });
 
 app.get('*', (req, res) => {
