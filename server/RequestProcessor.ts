@@ -1,42 +1,65 @@
-import { Requests, RequestItem } from './Requests';
-
-type Agent = {
-  getAvailableItems(): number;
-  requestTrack(trackGuid: string, breakNoteItemGuid?: string | null, requestItemGuid?: string | null, requestedBy?: string | null): Promise<void>;
-};
+import { RequestAgent } from "./RequestAgent";
+import { Requests } from "./Requests";
 
 export class RequestProcessor {
-  private timer: NodeJS.Timeout | null = null;
+  private isRunning = false;
 
-  constructor(
-    private readonly agent: Agent,
-    private readonly requests: Requests,
-    private readonly pollMs: number = 10_000 // 10s
-  ) {}
+  constructor(private requests: Requests, private requestAgent: RequestAgent) {
+    const g: any = global as any;
+    if (g.__bwProcessorStarted) return;
+    g.__bwProcessorStarted = true;
 
-  start() {
-    if (this.timer) return;
-    this.timer = setInterval(() => { this.tick().catch(()=>{}); }, this.pollMs);
+    setInterval(() => {
+      this.processRequests().catch(err => console.error('Processor error:', err));
+    }, 10000);
+
+    this.processRequests().catch(() => {});
   }
 
-  stop() {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = null;
-  }
+  async processRequests() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    try {
+      const queue = await this.requests.getAutoProcessEligible();
+      if (!queue.length) return;
 
-  private async tick() {
-    let slots = this.agent.getAvailableItems();
-    if (slots <= 0) return;
+      const availableItems = await this.requestAgent.getAvailableItems();
+      if (!availableItems.length) return;
 
-    while (slots-- > 0) {
-      const next = this.requests.takeNextForProcessing(Date.now());
-      if (!next) break;
-      try {
-        await this.agent.requestTrack(next.trackGuid, undefined, undefined, next.requestedBy ?? null);
-        this.requests.markProcessed(next.id);
-      } catch (err) {
-        this.requests.requeue(next.id);
+      for (const request of queue) {
+        const claimed = await this.requests.setProcessing(request.id, true);
+        if (!claimed) continue;
+
+        let processed = false;
+
+        for (const item of [...availableItems]) {
+          try {
+            const ok = await this.requestAgent.requestTrack(
+              request.trackGuid,
+              item.breakNoteItemGuid,
+              item.requestItemGuid,
+              request.requestedBy + (request.message ? ` — ${request.message}` : '')
+            );
+            if (ok) {
+              await this.requests.markProcessed(request.id);
+              const idx = availableItems.indexOf(item);
+              if (idx >= 0) availableItems.splice(idx, 1);
+              processed = true;
+              console.log('Processed request:', request.id);
+              break;
+            }
+          } catch (e) {
+            console.error('Failed processing request', request.id, e);
+          }
+        }
+
+        if (!processed) {
+          await this.requests.setProcessing(request.id, false);
+          break;
+        }
       }
+    } finally {
+      this.isRunning = false;
     }
   }
 }

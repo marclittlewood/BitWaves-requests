@@ -1,122 +1,134 @@
-export type RequestStatus = 'pending' | 'held' | 'processed' | 'processing';
+import { v4 as uuidv4 } from 'uuid';
+import { RequestDto, RequestStatus } from '../shared/RequestDto';
 
-export interface RequestItem {
-  id: string;
-  trackGuid: string;
-  requestedBy?: string;
-  message?: string;
-  ipAddress?: string;
-  requestedAt: string | Date;
-  processedAt?: string | Date;
-  status?: RequestStatus;
-  heldAt?: number;
-  force?: boolean;       // admin pressed Process -> prioritize
-}
+const AUTO_PROCESS_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 
 export class Requests {
-  private items: RequestItem[] = [];
+  private requests: RequestDto[] = [];
 
-  constructor(
-    private autoProcessMs: number = 5 * 60 * 1000,
-    private holdMaxMs: number = 6 * 60 * 60 * 1000
-  ) {}
+  async init() {
+    // No-op; placeholder for persistence hydration if needed.
+    return;
+  }
 
-  addRequest(trackGuid: string, requestedBy?: string, message?: string, ipAddress?: string): RequestItem {
-    const item: RequestItem = {
-      id: crypto.randomUUID(),
+  async addRequest(trackGuid: string, requestedBy: string, message?: string, ipAddress?: string) {
+    const now = new Date();
+    const req: RequestDto = {
+      id: uuidv4(),
       trackGuid,
       requestedBy,
       message,
       ipAddress,
-      requestedAt: new Date().toISOString(),
+      requestedAt: now,
       status: 'pending',
+      autoProcessAt: new Date(now.getTime() + AUTO_PROCESS_DELAY_MS)
     };
-    this.items.push(item);
-    return item;
+    this.requests.push(req);
+    return req;
   }
 
-  getAll() {
-    // group the way the client can consume
-    return {
-      pending: this.items.filter(r => !r.processedAt && r.status !== 'held'),
-      held: this.items.filter(r => r.status === 'held'),
-      processed: this.items.filter(r => !!r.processedAt),
-    };
-  }
-
-  holdRequest(id: string) {
-    const r = this.items.find(x => x.id === id && !x.processedAt);
-    if (!r) return false;
-    r.status = 'held';
-    r.heldAt = Date.now();
-    return true;
-  }
-
-  unholdRequest(id: string) {
-    const r = this.items.find(x => x.id === id && x.status === 'held');
-    if (!r) return false;
-    r.status = 'pending';
-    r.heldAt = undefined;
-    return true;
-  }
-
-  /** Admin wants this to go now (next poll tick) */
-  forceProcessNow(id: string) {
-    const r = this.items.find(x => x.id === id && !x.processedAt);
-    if (!r) return false;
-    r.status = 'pending';   // if held, release it
-    r.force = true;
-    return true;
-  }
-
-  /** Called by RequestProcessor tick to take one ready item */
-  takeNextForProcessing(now = Date.now()): RequestItem | undefined {
-    // 1) force items first
-    let idx = this.items.findIndex(r => !r.processedAt && r.status !== 'processing' && r.force === true);
-    if (idx === -1) {
-      // 2) pending items that aged >= autoProcessMs
-      idx = this.items.findIndex(r => !r.processedAt
-        && (r.status === 'pending' || !r.status)
-        && (now - new Date(r.requestedAt).getTime() >= this.autoProcessMs));
+  async getRequests(status: 'all' | RequestStatus = 'all', limit: number = 200) {
+    let list = this.requests.slice();
+    if (status !== 'all') {
+      list = list.filter(r => r.status === status);
     }
-    if (idx === -1) {
-      // 3) held items that reached holdMaxMs
-      idx = this.items.findIndex(r => !r.processedAt
-        && r.status === 'held'
-        && typeof r.heldAt === 'number'
-        && (now - r.heldAt >= this.holdMaxMs));
+    return list.sort((a,b) => +new Date(b.requestedAt) - +new Date(a.requestedAt)).slice(0, limit);
+  }
+
+  async deleteRequest(id: string) {
+    const req = this.requests.find(r => r.id === id);
+    if (!req) return false;
+    req.status = 'deleted';
+    return true;
+  }
+
+  async holdRequest(id: string) {
+    const req = this.requests.find(r => r.id === id);
+    if (!req) return false;
+    req.status = 'held';
+    return true;
+  }
+
+  async unholdRequest(id: string) {
+    const req = this.requests.find(r => r.id === id);
+    if (!req) return false;
+    const now = new Date();
+    req.status = 'pending';
+    req.autoProcessAt = new Date(now.getTime() + AUTO_PROCESS_DELAY_MS);
+    return true;
+  }
+
+  async forceProcessNow(id: string) {
+    const req = this.requests.find(r => r.id === id);
+    if (!req) return false;
+    req.status = 'pending';
+    req.autoProcessAt = new Date(Date.now() - 1000); // eligible immediately
+    return true;
+  }
+
+  async setProcessing(id: string, isProcessing: boolean) {
+    const req = this.requests.find(r => r.id === id);
+    if (!req) return false;
+    if (isProcessing) {
+      if (req.status !== 'pending') return false;
+      req.status = 'processing';
+    } else {
+      if (req.status === 'processing') req.status = 'pending';
     }
-    if (idx === -1) return undefined;
-    const r = this.items[idx];
-    r.status = 'processing';
-    r.force = false;
-    return r;
-  }
-
-  markProcessed(id: string) {
-    const r = this.items.find(x => x.id === id);
-    if (!r) return false;
-    r.processedAt = new Date().toISOString();
-    r.status = 'processed';
-    r.heldAt = undefined;
-    r.force = false;
     return true;
   }
 
-  /** If a processing attempt fails, put it back to pending */
-  requeue(id: string) {
-    const r = this.items.find(x => x.id === id);
-    if (!r) return false;
-    if (!r.processedAt) r.status = 'pending';
+  async markProcessed(id: string) {
+    const req = this.requests.find(r => r.id === id);
+    if (!req) return false;
+    req.status = 'processed';
+    req.processedAt = new Date();
+    // make it permanently ineligible unless manually changed
+    req.autoProcessAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
     return true;
   }
 
-  deleteRequest(id: string) {
-    const i = self.items.findIndex(x => x.id == id);
-    if (i === -1) return false;
-    self.items.splice(i, 1);
-    return true;
+  async getAutoProcessEligible(): Promise<RequestDto[]> {
+    const now = Date.now();
+    return this.requests.filter(r => r.status === 'pending' && new Date(r.autoProcessAt).getTime() <= now);
+  }
+
+  // --- Moderation helpers ---
+  private countInWindowByIp(ipAddress: string, windowMs: number): number {
+    const now = Date.now();
+    return this.requests.filter(r => {
+      if (!r.ipAddress) return false;
+      const ts = new Date(r.requestedAt).getTime();
+      return r.ipAddress === ipAddress && (now - ts) <= windowMs;
+    }).length;
+  }
+
+  async getCountsByIp(ipAddress: string) {
+    const perHour = this.countInWindowByIp(ipAddress, 60 * 60 * 1000);
+    const perDay  = this.countInWindowByIp(ipAddress, 24 * 60 * 60 * 1000);
+    return { perHour, perDay };
+  }
+
+  // --- Per-track cooldown helpers ---
+  getLastActivityForTrack(trackGuid: string): Date | null {
+    const candidates = this.requests
+      .filter(r => r.trackGuid === trackGuid && r.status !== 'deleted')
+      .map(r => {
+        const ra = new Date(r.requestedAt).getTime();
+        const pa = r.processedAt ? new Date(r.processedAt).getTime() : 0;
+        return Math.max(ra, pa);
+      });
+    if (!candidates.length) return null;
+    return new Date(Math.max(...candidates));
+  }
+
+  isWithinCooldown(trackGuid: string, cooldownMs: number): { blocked: boolean, nextAllowedAt?: Date } {
+    const last = this.getLastActivityForTrack(trackGuid);
+    if (!last) return { blocked: false };
+    const nextAllowed = new Date(last.getTime() + cooldownMs);
+    if (Date.now() < nextAllowed.getTime()) {
+      return { blocked: true, nextAllowedAt: nextAllowed };
+    }
+    return { blocked: false };
   }
 }
-// Node 18+ global crypto
-declare const crypto: { randomUUID: () => string };

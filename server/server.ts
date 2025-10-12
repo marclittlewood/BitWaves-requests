@@ -131,6 +131,26 @@ app.delete('/api/requests/:id', authenticateJWT, async (req, res) => {
   }
 });
 
+
+// --- Admin request workflow endpoints (Hold / Unhold / Process Now) ---
+app.post('/api/requests/:id/hold', authenticateJWT, async (req: Request, res: Response) => {
+  const ok = await requests.holdRequest(req.params.id);
+  if (!ok) { res.status(404).json({ success: false, message: 'Request not found' }); return; }
+  res.json({ success: true });
+});
+
+app.post('/api/requests/:id/unhold', authenticateJWT, async (req: Request, res: Response) => {
+  const ok = await requests.unholdRequest(req.params.id);
+  if (!ok) { res.status(404).json({ success: false, message: 'Request not found' }); return; }
+  res.json({ success: true });
+});
+
+app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res: Response) => {
+  const ok = await requests.forceProcessNow(req.params.id);
+  if (!ok) { res.status(404).json({ success: false, message: 'Request not found' }); return; }
+  res.json({ success: true });
+});
+
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../client/dist', 'index.html'));
 });
