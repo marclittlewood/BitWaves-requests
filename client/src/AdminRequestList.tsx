@@ -51,55 +51,63 @@ export function AdminRequestList({ token, onLogout }: AdminRequestListProps) {
               <th className="px-4 py-3 font-semibold">IP Address</th>
               <th className="px-4 py-3 font-semibold">Processed Time</th>
               <th className="px-4 py-3 font-semibold">Status</th>
-              <th className="px-4 py-3 font-semibold">Actions</th>
             </tr>
           </thead>
           <tbody>
             {(requests || []).map((r) => {
               const created = new Date(r.requestedAt);
               const processed = r.processedAt ? new Date(r.processedAt) : null;
+
+              const ActionsBar = (
+                <div className="flex gap-2 flex-wrap pt-2">
+                  <button
+                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm"
+                    style={{ background: '#F4320B' }}
+                    onClick={() => deleteMutation.mutate(r.id)}
+                  >
+                    Delete
+                  </button>
+                  <button
+                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm disabled:opacity-60"
+                    style={{ background: '#F48B0B' }}
+                    onClick={() => holdMutation.mutate(r.id)}
+                    disabled={r.status === 'held'}
+                  >
+                    Hold
+                  </button>
+                  <button
+                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm"
+                    style={{ background: '#09C816' }}
+                    onClick={() => processMutation.mutate(r.id)}
+                  >
+                    Process
+                  </button>
+                </div>
+              );
+
               return (
-                <tr key={r.id} className="border-t align-top">
-                  <td className="px-4 py-3 whitespace-nowrap font-medium">{getTitle(r.trackGuid)}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">{r.requestedBy || '-'}</td>
-                  <td className="px-4 py-3 max-w-[28ch]" title={r.message || ''}>
-                    {r.message ? <span className="line-clamp-2">{r.message}</span> : <span className="text-gray-400">—</span>}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">{created.toLocaleString()}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">{r.ipAddress || '—'}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">{processed ? processed.toLocaleString() : '—'}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100">
-                      {r.status || (r.processedAt ? 'processed' : 'pending')}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2 flex-wrap">
-                      <button
-                        className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm"
-                        style={{ background: '#F4320B' }}
-                        onClick={() => deleteMutation.mutate(r.id)}
-                      >
-                        Delete
-                      </button>
-                      <button
-                        className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm disabled:opacity-60"
-                        style={{ background: '#F48B0B' }}
-                        onClick={() => holdMutation.mutate(r.id)}
-                        disabled={r.status === 'held'}
-                      >
-                        Hold
-                      </button>
-                      <button
-                        className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm"
-                        style={{ background: '#09C816' }}
-                        onClick={() => processMutation.mutate(r.id)}
-                      >
-                        Process
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                <React.Fragment key={r.id}>
+                  <tr className="align-top">
+                    <td className="px-4 py-3 whitespace-nowrap font-medium">{getTitle(r.trackGuid)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{r.requestedBy || '-'}</td>
+                    <td className="px-4 py-3 max-w-[36ch]" title={r.message || ''}>
+                      {r.message ? <span className="line-clamp-2">{r.message}</span> : <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">{created.toLocaleString()}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{r.ipAddress || '—'}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{processed ? processed.toLocaleString() : '—'}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100">
+                        {r.status || (r.processedAt ? 'processed' : 'pending')}
+                      </span>
+                    </td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="px-4 pb-4 pt-0" colSpan={7}>
+                      {ActionsBar}
+                    </td>
+                  </tr>
+                </React.Fragment>
               );
             })}
           </tbody>
