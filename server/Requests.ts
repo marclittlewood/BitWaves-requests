@@ -7,7 +7,7 @@ export class Requests {
   private requests: RequestDto[] = [];
 
   async init() {
-    // No-op for compatibility; could hydrate from storage in the future.
+    // No-op; placeholder for persistence hydration if needed.
     return;
   }
 
@@ -62,15 +62,13 @@ export class Requests {
     const req = this.requests.find(r => r.id === id);
     if (!req) return false;
     req.status = 'pending';
-    // Make it immediately eligible
-    req.autoProcessAt = new Date(Date.now() - 1000);
+    req.autoProcessAt = new Date(Date.now() - 1000); // eligible immediately
     return true;
   }
 
   async setProcessing(id: string, isProcessing: boolean) {
     const req = this.requests.find(r => r.id === id);
     if (!req) return false;
-    // Only allow claiming when currently pending
     if (isProcessing) {
       if (req.status !== 'pending') return false;
       req.status = 'processing';
@@ -85,7 +83,7 @@ export class Requests {
     if (!req) return false;
     req.status = 'processed';
     req.processedAt = new Date();
-    // Push eligibility far out to avoid any accidental re-pickup
+    // make it permanently ineligible unless manually changed
     req.autoProcessAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
     return true;
   }
@@ -95,7 +93,7 @@ export class Requests {
     return this.requests.filter(r => r.status === 'pending' && new Date(r.autoProcessAt).getTime() <= now);
   }
 
-  // Simple counts for moderation tools (kept from earlier versions)
+  // --- Moderation helpers ---
   private countInWindowByIp(ipAddress: string, windowMs: number): number {
     const now = Date.now();
     return this.requests.filter(r => {
@@ -109,5 +107,28 @@ export class Requests {
     const perHour = this.countInWindowByIp(ipAddress, 60 * 60 * 1000);
     const perDay  = this.countInWindowByIp(ipAddress, 24 * 60 * 60 * 1000);
     return { perHour, perDay };
+  }
+
+  // --- Per-track cooldown helpers ---
+  getLastActivityForTrack(trackGuid: string): Date | null {
+    const candidates = this.requests
+      .filter(r => r.trackGuid === trackGuid && r.status !== 'deleted')
+      .map(r => {
+        const ra = new Date(r.requestedAt).getTime();
+        const pa = r.processedAt ? new Date(r.processedAt).getTime() : 0;
+        return Math.max(ra, pa);
+      });
+    if (!candidates.length) return null;
+    return new Date(Math.max(...candidates));
+  }
+
+  isWithinCooldown(trackGuid: string, cooldownMs: number): { blocked: boolean, nextAllowedAt?: Date } {
+    const last = this.getLastActivityForTrack(trackGuid);
+    if (!last) return { blocked: false };
+    const nextAllowed = new Date(last.getTime() + cooldownMs);
+    if (Date.now() < nextAllowed.getTime()) {
+      return { blocked: true, nextAllowedAt: nextAllowed };
+    }
+    return { blocked: false };
   }
 }

@@ -5,7 +5,6 @@ export class RequestProcessor {
   private isRunning = false;
 
   constructor(private requests: Requests, private requestAgent: RequestAgent) {
-    // Singleton guard to avoid duplicate intervals (e.g., hot reload/multiple inits)
     const g: any = global as any;
     if (g.__bwProcessorStarted) return;
     g.__bwProcessorStarted = true;
@@ -28,7 +27,6 @@ export class RequestProcessor {
       if (!availableItems.length) return;
 
       for (const request of queue) {
-        // Claim the request
         const claimed = await this.requests.setProcessing(request.id, true);
         if (!claimed) continue;
 
@@ -56,7 +54,6 @@ export class RequestProcessor {
         }
 
         if (!processed) {
-          // Release claim and retry next tick
           await this.requests.setProcessing(request.id, false);
           break;
         }
