@@ -1,229 +1,133 @@
-import React, { useState, useEffect } from 'react';
-import { TrackDto } from '../../shared/TrackDto';
-import useLocalStorage from './hooks/useLocalStorage';
-import { useSettingsQuery } from './queries/Settings';
+import React, { useState } from 'react';
 
-export function TrackCard({ track }: { track: TrackDto }) {
-    const [showConfirm, setShowConfirm] = useState(false);
-    const [requesterName, setRequesterName] = useLocalStorage<string>('songRequestName', '');
-    const [requesterMessage, setRequesterMessage] = useState('');
-    const [isRequested, setIsRequested] = useState(false);
-    const [requestTime, setRequestTime] = useState<Date | null>(null);
-    const [errorMessage, setErrorMessage] = useState<string | null>(null);
-    const maxMessageLength = useSettingsQuery().data?.maxMessageLength || 150;
-
-    // Reset the requested status after 30 seconds
-    useEffect(() => {
-        if (isRequested) {
-            const timer = setTimeout(() => {
-                setIsRequested(false);
-            }, 30000); // 30 seconds
-            return () => clearTimeout(timer);
-        }
-    }, [isRequested]);
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        
-        if (!requesterName.trim()) {
-            // Don't submit if name is empty
-            return;
-        }
-        
-        // Clear any previous error
-        setErrorMessage(null);
-        
-        console.log('Requesting track:', track.guid);
-        fetch('/api/requestTrack', {
-            method: 'POST',
-            body: JSON.stringify({ 
-                trackGuid: track.guid, 
-                requestedBy: requesterName,
-                message: requesterMessage.trim() || undefined
-            }),
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        })
-        .then(response => {
-            if (response.ok) {
-                setIsRequested(true);
-                setRequestTime(new Date());
-                setShowConfirm(false);
-                setRequesterMessage(''); // Clear message for next request
-            } else if (response.status === 429) {
-            const data = await response.json().catch(() => ({}));
-            if (data?.error === 'COOLDOWN_ACTIVE') {
-              const when = data.nextAllowedAt ? new Date(data.nextAllowedAt).toLocaleString() : 'later';
-              setErrorMessage(`That song was requested recently. You can request it again after ${when}.`);
-            } else if (data?.error === 'TOO_MANY_REQUESTS') {
-              const when = data.nextAllowedAt ? new Date(data.nextAllowedAt).toLocaleString() : 'later';
-              const scope = data.window === 'hour' ? 'this hour' : 'today';
-              const limit = typeof data.limit === 'number' ? ` (limit: ${data.limit} per ${scope})` : '';
-              setErrorMessage(`You’ve reached the request limit${limit}. Try again after ${when}.`);
-            } else {
-              setErrorMessage('You’ve hit a limit. Please try again later.');
-            }
-          } else if (response.status === 409) {
-                // Song is already requested
-                return response.json().then(data => {
-                    setErrorMessage(data.message || 'This song has already been requested recently.');
-                });
-            } else if (response.status === 400) {
-                // Validation error (e.g., message too long)
-                return response.json().then(data => {
-                    setErrorMessage(data.message || 'Invalid request parameters.');
-                });
-            } else {
-                return response.json().then(data => {
-                    setErrorMessage(data.message || 'An error occurred while requesting the song');
-                });
-            }
-        })
-        .catch(error => {
-            console.error('Error requesting track:', error);
-            setErrorMessage('Network error. Please try again.');
-        });
+export default function TrackCard(props: any) {
+  // Be flexible with incoming props so this drops in cleanly
+  const track =
+    props.track ??
+    props.item ??
+    {
+      guid: props.guid ?? props.trackGuid,
+      artistTitle:
+        props.artistTitle ??
+        (props.artist && props.title ? `${props.artist} - ${props.title}` : props.title) ??
+        props.name ??
+        'Unknown Track',
     };
 
-    // Format the time since request
-    const getTimeSinceRequest = () => {
-        if (!requestTime) return '';
-        
-        const now = new Date();
-        const diffInSeconds = Math.floor((now.getTime() - requestTime.getTime()) / 1000);
-        
-        if (diffInSeconds < 60) {
-            return 'just now';
-        } else {
-            const minutes = Math.floor(diffInSeconds / 60);
-            return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
-        }
-    };
+  const trackGuid: string = track?.guid ?? props.trackGuid;
+  const artistTitle: string = track?.artistTitle ?? `${props.artist ?? ''} ${props.title ?? ''}`.trim();
 
+  const [requestedBy, setRequestedBy] = useState<string>('');
+  const [message, setMessage] = useState<string>('');
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [success, setSuccess] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+
+  if (!trackGuid) {
     return (
-        <>
-            <div
-                onClick={() => {
-                    setShowConfirm(true);
-                    setErrorMessage(null);
-                }}
-                className={`bg-white rounded-lg shadow-md p-3 lg:p-4 hover:shadow-lg transition-shadow duration-200 cursor-pointer 
-                    ${isRequested ? 'border-2 border-green-500' : ''}`}
-            >
-                <div className="text-base lg:text-lg font-semibold text-gray-800">{track.artistTitle}</div>
-                {isRequested && (
-                    <div className="mt-2 text-sm text-green-600 flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        Requested {getTimeSinceRequest()}
-                    </div>
-                )}
-            </div>
-
-            {showConfirm && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-                        <h3 className="text-xl font-semibold text-gray-900 mb-4">
-                            {errorMessage ? 'Song Request' : 'Confirm Song Request'}
-                        </h3>
-                        <p className="text-gray-600 mb-4">
-                            {errorMessage ? 
-                                `Unable to request: ${track.artistTitle}` : 
-                                `Would you like to request "${track.artistTitle}"?`}
-                        </p>
-                        {errorMessage && (
-                            <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md">
-                                {errorMessage}
-                            </div>
-                        )}
-                        
-                        {!errorMessage ? (
-                            <form onSubmit={handleSubmit}>
-                                <div className="mb-4">
-                                    <label htmlFor="requesterName" className="block text-sm font-medium text-gray-700 mb-1">
-                                        Your Name
-                                    </label>
-                                    <input
-                                        type="text"
-                                        id="requesterName"
-                                        name="requesterName"
-                                        autoFocus={!requesterName}
-                                        value={requesterName}
-                                        onChange={(e) => setRequesterName(e.target.value)}
-                                        placeholder="Enter your name"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                                        required
-                                    />
-                                    {requesterName && (
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            Your name will be remembered for future requests
-                                        </p>
-                                    )}
-                                </div>
-                                
-                                <div className="mb-4">
-                                    <label htmlFor="requesterMessage" className="block text-sm font-medium text-gray-700 mb-1">
-                                        Message (optional)
-                                    </label>
-                                    <textarea
-                                        id="requesterMessage"
-                                        name="requesterMessage"
-                                        value={requesterMessage}
-                                        autoFocus={!!requesterName}
-                                        onChange={(e) => {
-                                            if (e.target.value.length <= maxMessageLength) {
-                                                setRequesterMessage(e.target.value);
-                                            }
-                                        }}
-                                        placeholder={`Add a message (max ${maxMessageLength} characters)`}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 resize-none"
-                                        rows={3}
-                                    />
-                                    <p className="text-xs text-gray-500 mt-1 flex justify-end">
-                                        <span>{requesterMessage.length}/{maxMessageLength}</span>
-                                    </p>
-                                </div>
-                                
-                                <div className="flex justify-end space-x-3">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setShowConfirm(false);
-                                            setErrorMessage(null);
-                                        }}
-                                        className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors cursor-pointer"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        disabled={!requesterName.trim()}
-                                        className={`px-4 py-2 ${!requesterName.trim() ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 cursor-pointer'} text-white rounded-lg transition-colors`}
-                                    >
-                                        Request Song
-                                    </button>
-                                </div>
-                            </form>
-                        ) : (
-                            <div className="flex justify-center">
-                                <button
-                                    autoFocus
-                                    type="button"
-                                    onClick={() => {
-                                        setShowConfirm(false);
-                                        setErrorMessage(null);
-                                    }}
-                                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors cursor-pointer"
-                                >
-                                    Close
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-        </>
+      <div className="p-4 border rounded-xl bg-white">
+        <div className="text-sm text-red-600">Missing track GUID.</div>
+      </div>
     );
+  }
+
+  const onSubmit = () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setSuccess(false);
+    setErrorMessage('');
+
+    fetch('/api/requestTrack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        trackGuid,
+        requestedBy: requestedBy?.trim() || undefined,
+        message: message?.trim() || undefined,
+      }),
+    })
+      .then(async (response) => {
+        if (response.ok) {
+          setSuccess(true);
+          setErrorMessage('');
+          return;
+        }
+
+        // Distinguish between per-track cooldown and per-IP/user rate limit
+        if (response.status === 429) {
+          const data = await response.json().catch(() => ({} as any));
+
+          if (data?.error === 'COOLDOWN_ACTIVE') {
+            const when = data.nextAllowedAt ? new Date(data.nextAllowedAt).toLocaleString() : 'later';
+            setErrorMessage(`That song was requested recently. You can request it again after ${when}.`);
+            return;
+          }
+
+          if (data?.error === 'TOO_MANY_REQUESTS') {
+            const when = data.nextAllowedAt ? new Date(data.nextAllowedAt).toLocaleString() : 'later';
+            const scope = data.window === 'hour' ? 'this hour' : 'today';
+            const limit =
+              typeof data.limit === 'number' ? ` (limit: ${data.limit} per ${scope})` : '';
+            setErrorMessage(`You’ve reached the request limit${limit}. Try again after ${when}.`);
+            return;
+          }
+
+          setErrorMessage('You’ve hit a limit. Please try again later.');
+          return;
+        }
+
+        if (response.status === 409) {
+          // If you already have a specific 409 meaning, keep it here
+          const data = await response.json().catch(() => ({} as any));
+          setErrorMessage(data?.message || 'Your request could not be processed right now.');
+          return;
+        }
+
+        // Generic fallback for other errors
+        const data = await response.json().catch(() => ({} as any));
+        setErrorMessage(data?.message || 'Something went wrong. Please try again.');
+      })
+      .catch(() => {
+        setErrorMessage('Network error. Please try again.');
+      })
+      .finally(() => {
+        setSubmitting(false);
+      });
+  };
+
+  return (
+    <div className="p-4 border rounded-xl bg-white shadow-sm flex flex-col gap-3">
+      <div className="font-medium">{artistTitle || 'Untitled'}</div>
+
+      {/* Optional inputs; keep if you already surface these on your public page */}
+      <div className="flex flex-col gap-2">
+        <input
+          placeholder="Your name (optional)"
+          className="border rounded-lg px-3 py-2"
+          value={requestedBy}
+          onChange={(e) => setRequestedBy(e.target.value)}
+        />
+        <input
+          placeholder="Message (optional)"
+          className="border rounded-lg px-3 py-2"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+        />
+      </div>
+
+      {errorMessage ? <div className="text-sm text-red-600">{errorMessage}</div> : null}
+      {success ? (
+        <div className="text-sm text-green-600">Request received — thanks!</div>
+      ) : null}
+
+      <button
+        className="px-4 py-2 rounded-lg text-white font-medium shadow-sm disabled:opacity-60"
+        style={{ background: '#09C816' }}
+        onClick={onSubmit}
+        disabled={submitting}
+      >
+        {submitting ? 'Requesting…' : 'Request Song'}
+      </button>
+    </div>
+  );
 }
