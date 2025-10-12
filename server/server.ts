@@ -64,6 +64,21 @@ app.get('/api/settings', (req, res) => {
 app.post('/api/requestTrack', async (req: Request, res: Response) => {
   try {
     const { trackGuid, requestedBy, message } = req.body || {};
+
+    // Per-track cooldown (default 6 hours; override with env REQUEST_TRACK_COOLDOWN_HOURS)
+    try {
+      const hours = Number(process.env.REQUEST_TRACK_COOLDOWN_HOURS || 6);
+      const cooldownMs = hours * 60 * 60 * 1000;
+      if (trackGuid) {
+        const cd = requests.isWithinCooldown(trackGuid, cooldownMs);
+        if (cd.blocked) {
+          res.status(429).json({ success: false, error: 'COOLDOWN_ACTIVE', cooldownHours: hours, nextAllowedAt: cd.nextAllowedAt });
+          return;
+        }
+      }
+    } catch (e) {
+      console.error('Cooldown check error', e);
+    }
     const clientIp = getClientIp(req);
 
     const messageString = (message ?? '').toString();
