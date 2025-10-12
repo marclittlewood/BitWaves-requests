@@ -149,8 +149,6 @@ app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res:
   const ok = await requests.forceProcessNow(req.params.id);
   if (!ok) { res.status(404).json({ success: false, message: 'Request not found' }); return; }
   res.json({ success: true });
-}); return; }
-  res.json({ success: true });
 });
 
 app.get('*', (req, res) => {
