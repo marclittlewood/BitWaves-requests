@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function TrackCard(props: any) {
+export function TrackCard(props: any) {
   // Be flexible with incoming props so this drops in cleanly
   const track =
     props.track ??
@@ -131,3 +131,5 @@ export default function TrackCard(props: any) {
     </div>
   );
 }
+
+export default TrackCard;
