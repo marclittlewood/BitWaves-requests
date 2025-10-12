@@ -35,8 +35,32 @@ async function postJSON(url: string, token: string | null, method: 'POST'|'DELET
   return res.json().catch(() => ({}));
 }
 
+const styles = {
+  page: { padding: '20px' },
+  wrap: { maxWidth: '1200px', margin: '0 auto' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  h1: { fontSize: 24, fontWeight: 700 as const },
+  logout: { padding: '6px 10px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff' },
+  section: { marginBottom: 28 },
+  h2: { fontSize: 18, fontWeight: 600 as const, margin: '8px 0 12px' },
+  list: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' },
+  row: { borderBottom: '1px solid #e5e7eb', padding: '12px 14px' },
+  rowTop: { display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' as const },
+  title: { fontWeight: 600 as const, fontSize: 16 },
+  meta: { display: 'flex', gap: 8, flexWrap: 'wrap' as const },
+  chip: { background: '#f3f4f6', padding: '4px 8px', borderRadius: 8, fontSize: 12 },
+  actionBar: { display: 'flex', gap: 10, flexWrap: 'wrap' as const, marginTop: 10 },
+  btn: { border: 'none', borderRadius: 8, padding: '6px 10px', color: '#fff', cursor: 'pointer' },
+  btnDelete: { background: '#F4320B' },
+  btnHold: { background: '#F48B0B' },
+  btnProcess: { background: '#09C816' },
+  empty: { padding: 16, color: 'rgba(0,0,0,.6)' },
+  loading: { margin: '8px 0' },
+  error: { margin: '8px 0', color: '#b91c1c' },
+} as const;
+
 export function AdminRequestList({ token, onLogout }: { token: string | null; onLogout: () => void; }) {
-  const [requests, setRequests] = useState<RequestItem[]>([]);
+  const [pending, setPending] = useState<RequestItem[]>([]);
   const [held, setHeld] = useState<RequestItem[]>([]);
   const [processed, setProcessed] = useState<RequestItem[]>([]);
   const [tracks, setTracks] = useState<TrackItem[]>([]);
@@ -63,23 +87,23 @@ export function AdminRequestList({ token, onLogout }: { token: string | null; on
       if (raw && typeof raw === 'object' && !Array.isArray(raw) &&
           ('pending' in raw || 'held' in raw || 'processed' in raw)) {
         const g = raw as ApiRequestsGrouped;
-        setRequests((g.pending ?? []).slice().sort((a,b)=>+new Date(a.requestedAt)-+new Date(b.requestedAt)));
+        setPending((g.pending ?? []).slice().sort((a,b)=>+new Date(a.requestedAt)-+new Date(b.requestedAt)));
         setHeld((g.held ?? []).slice().sort((a,b)=>+new Date(a.requestedAt)-+new Date(b.requestedAt)));
         setProcessed((g.processed ?? []).slice().sort((a,b)=>+new Date(b.processedAt||0)-+new Date(a.processedAt||0)));
       } else if (Array.isArray(raw)) {
-        const pending: RequestItem[] = [];
-        const heldArr: RequestItem[] = [];
-        const done: RequestItem[] = [];
+        const p: RequestItem[] = [];
+        const h: RequestItem[] = [];
+        const d: RequestItem[] = [];
         for (const r of raw as RequestItem[]) {
-          if (r.processedAt) done.push(r);
-          else if ((r as any).status === 'held' || (r as any).held === true) heldArr.push(r);
-          else pending.push(r);
+          if (r.processedAt) d.push(r);
+          else if ((r as any).status === 'held' || (r as any).held === true) h.push(r);
+          else p.push(r);
         }
-        setRequests(pending.sort((a,b)=>+new Date(a.requestedAt)-+new Date(b.requestedAt)));
-        setHeld(heldArr.sort((a,b)=>+new Date(a.requestedAt)-+new Date(b.requestedAt)));
-        setProcessed(done.sort((a,b)=>+new Date(b.processedAt||0)-+new Date(a.processedAt||0)));
+        setPending(p.sort((a,b)=>+new Date(a.requestedAt)-+new Date(b.requestedAt)));
+        setHeld(h.sort((a,b)=>+new Date(a.requestedAt)-+new Date(b.requestedAt)));
+        setProcessed(d.sort((a,b)=>+new Date(b.processedAt||0)-+new Date(a.processedAt||0)));
       } else {
-        setRequests([]); setHeld([]); setProcessed([]);
+        setPending([]); setHeld([]); setProcessed([]);
       }
     } catch (e:any) {
       setError(e?.message || 'Failed to load');
@@ -98,60 +122,55 @@ export function AdminRequestList({ token, onLogout }: { token: string | null; on
   const doProcess = async (id: string) => { await postJSON(`/api/requests/${id}/process`, token); await load(); };
   const doDelete = async (id: string) => { await postJSON(`/api/requests/${id}`, token, 'DELETE'); await load(); };
 
-  const Section = ({ title, children, count }:{ title:string; children:React.ReactNode; count:number }) => (
-    <section style={{maxWidth: '1100px', margin: '0 auto 24px'}}>
-      <h2 style={{margin:'12px 0', fontSize:'20px'}}>{title} <span style={{opacity:.7}}>({count})</span></h2>
-      <div>{children}</div>
+  const Row = ({ r, showActions }:{ r:RequestItem; showActions:boolean }) => (
+    <li style={styles.row}>
+      <div style={styles.rowTop}>
+        <div style={styles.title}>{label(r)}</div>
+        <div style={styles.meta}>
+          {r.requestedBy ? <span style={styles.chip}>By: {r.requestedBy}</span> : null}
+          {r.ipAddress ? <span style={styles.chip}>IP: {r.ipAddress}</span> : null}
+          <span style={styles.chip}>At: {fmt(r.requestedAt)}</span>
+          {r.message ? <span style={styles.chip}>Msg: {r.message}</span> : null}
+        </div>
+      </div>
+      {showActions && (
+        <div style={styles.actionBar}>
+          <button onClick={()=>doDelete(r.id)} style={{...styles.btn, ...styles.btnDelete}}>Delete</button>
+          {((r as any).status === 'held' || (r as any).held) ? (
+            <button onClick={()=>doUnhold(r.id)} style={{...styles.btn, ...styles.btnHold}}>Release</button>
+          ) : (
+            <button onClick={()=>doHold(r.id)} style={{...styles.btn, ...styles.btnHold}}>Hold</button>
+          )}
+          <button onClick={()=>doProcess(r.id)} style={{...styles.btn, ...styles.btnProcess}}>Process</button>
+        </div>
+      )}
+    </li>
+  );
+
+  const Section = ({ title, items, showActions }:{ title:string; items:RequestItem[]; showActions:boolean }) => (
+    <section style={styles.section}>
+      <h2 style={styles.h2}>{title} <span style={{opacity:.7}}>({items?.length || 0})</span></h2>
+      <ul style={styles.list as React.CSSProperties}>
+        {items && items.length > 0 ? items.map(r => <Row key={r.id} r={r} showActions={showActions} />) : <li style={styles.empty}>No items.</li>}
+      </ul>
     </section>
   );
 
-  const Card = ({ r, showActions }:{ r:RequestItem; showActions:boolean }) => (
-    <div style={{border:'1px solid #e5e7eb', borderRadius:12, padding:12, marginBottom:12, background:'#fff'}}>
-      <div style={{fontWeight:600, marginBottom:8}}>{label(r)}</div>
-      <div style={{display:'flex', gap:12, flexWrap:'wrap', marginBottom:8}}>
-        {r.requestedBy ? <span style={{background:'#f3f4f6', padding:'4px 8px', borderRadius:8}}>By: {r.requestedBy}</span> : null}
-        {r.ipAddress ? <span style={{background:'#f3f4f6', padding:'4px 8px', borderRadius:8}}>IP: {r.ipAddress}</span> : null}
-        {r.message ? <span style={{background:'#f3f4f6', padding:'4px 8px', borderRadius:8}}>Msg: {r.message}</span> : null}
-        <span style={{background:'#f3f4f6', padding:'4px 8px', borderRadius:8}}>At: {fmt(r.requestedAt)}</span>
-      </div>
-      {showActions && (
-        <div style={{display:'flex', gap:10, flexWrap:'wrap'}}>
-          <button onClick={()=>doDelete(r.id)} style={{background:'#F4320B', color:'#fff', border:'none', borderRadius:8, padding:'6px 10px'}}>Delete</button>
-          {((r as any).status === 'held' || (r as any).held) ? (
-            <button onClick={()=>doUnhold(r.id)} style={{background:'#F48B0B', color:'#fff', border:'none', borderRadius:8, padding:'6px 10px'}}>Release</button>
-          ) : (
-            <button onClick={()=>doHold(r.id)} style={{background:'#F48B0B', color:'#fff', border:'none', borderRadius:8, padding:'6px 10px'}}>Hold</button>
-          )}
-          <button onClick={()=>doProcess(r.id)} style={{background:'#09C816', color:'#fff', border:'none', borderRadius:8, padding:'6px 10px'}}>Process</button>
-        </div>
-      )}
-    </div>
-  );
-
   return (
-    <div style={{padding:'20px'}}>
-      <header style={{maxWidth:'1100px', margin:'0 auto 16px', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-        <h1 style={{fontSize:'24px', fontWeight:700}}>Requests Admin</h1>
-        <button onClick={onLogout} style={{padding:'6px 10px', borderRadius:8, border:'1px solid #e5e7eb'}}>Log out</button>
-      </header>
+    <div style={styles.page}>
+      <div style={styles.wrap as React.CSSProperties}>
+        <header style={styles.header}>
+          <h1 style={styles.h1}>Requests Admin</h1>
+          <button onClick={onLogout} style={styles.logout}>Log out</button>
+        </header>
 
-      {error ? <div style={{maxWidth:'1100px', margin:'0 auto 12px', color:'#b91c1c'}}>{error}</div> : null}
-      {loading ? <div style={{maxWidth:'1100px', margin:'0 auto 12px'}}>Loading…</div> : null}
+        {error ? <div style={styles.error}>{error}</div> : null}
+        {loading ? <div style={styles.loading}>Loading…</div> : null}
 
-      <Section title="Pending Requests" count={(requests?.length ?? 0)}>
-        {requests.map(r => <Card key={r.id} r={r} showActions={true} />)}
-        {(!requests || requests.length===0) && <div style={{opacity:.7}}>No pending requests.</div>}
-      </Section>
-
-      <Section title="Held Requests" count={(held?.length ?? 0)}>
-        {held.map(r => <Card key={r.id} r={r} showActions={true} />)}
-        {(!held || held.length===0) && <div style={{opacity:.7}}>No held requests.</div>}
-      </Section>
-
-      <Section title="Processed Requests" count={(processed?.length ?? 0)}>
-        {processed.map(r => <Card key={r.id} r={r} showActions={false} />)}
-        {(!processed || processed.length===0) && <div style={{opacity:.7}}>No processed requests yet.</div>}
-      </Section>
+        <Section title="Pending Requests" items={pending} showActions={true} />
+        <Section title="Held Requests" items={held} showActions={true} />
+        <Section title="Processed Requests" items={processed} showActions={false} />
+      </div>
     </div>
   );
 }
