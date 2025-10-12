@@ -1,14 +1,12 @@
 import express, { Request, Response } from 'express';
-import cors from 'cors';
 import path from 'path';
-import bodyParser from 'body-parser';
 import { Requests } from './Requests';
 import { RequestAgent } from './RequestAgent';
 import { RequestProcessor } from './RequestProcessor';
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 const PLAYIT_LIVE_BASE_URL = process.env.PLAYIT_LIVE_BASE_URL || '';
@@ -39,7 +37,8 @@ app.post('/api/requestTrack', async (req: Request, res: Response) => {
     const ip = getClientIp(req);
 
     // (Optional) rate limiting & cooldown checks would be inside Requests if implemented.
-    await requests.addRequest(trackGuid, requestedBy, message, ipAddress);
+    await const ipAddress = getClientIp(req);
+    requests.addRequest(trackGuid, requestedBy, message, ipAddress);
     requests.addRequest(trackGuid, requestedBy || '', message || '', ip);
     return res.json({ success: true });
   } catch (e: any) {
