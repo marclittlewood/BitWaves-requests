@@ -19,6 +19,10 @@ type ApiRequestsGrouped = {
   processed?: RequestItem[];
 };
 
+function cx(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(' ');
+}
+
 async function fetchJSON(url: string, token: string | null) {
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -32,31 +36,35 @@ async function postJSON(url: string, token: string | null, method: 'POST'|'DELET
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(url, { method, headers });
   if (!res.ok) throw new Error(`${method} ${url} failed: ${res.status}`);
-  return res.json().catch(() => ({}));
+  try { return await res.json(); } catch { return {}; }
 }
 
 const styles = {
   page: { padding: '20px' },
   wrap: { maxWidth: '1200px', margin: '0 auto' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  h1: { fontSize: 24, fontWeight: 700 as const },
-  logout: { padding: '6px 10px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff' },
-  section: { marginBottom: 28 },
-  h2: { fontSize: 18, fontWeight: 600 as const, margin: '8px 0 12px' },
-  list: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' },
-  row: { borderBottom: '1px solid #e5e7eb', padding: '12px 14px' },
-  rowTop: { display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' as const },
-  title: { fontWeight: 600 as const, fontSize: 16 },
-  meta: { display: 'flex', gap: 8, flexWrap: 'wrap' as const },
-  chip: { background: '#f3f4f6', padding: '4px 8px', borderRadius: 8, fontSize: 12 },
-  actionBar: { display: 'flex', gap: 10, flexWrap: 'wrap' as const, marginTop: 10 },
-  btn: { border: 'none', borderRadius: 8, padding: '6px 10px', color: '#fff', cursor: 'pointer' },
+  topBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  brand: { fontSize: 28, fontWeight: 800 as const },
+  counts: { fontSize: 16, color: '#6b7280' },
+  logout: { padding: '10px 16px', borderRadius: 12, border: '1px solid #cbd5e1', background: '#fff', fontSize: 18 },
+  h1: { fontSize: 28, fontWeight: 800 as const, margin: '16px 0' },
+  sectionHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', margin: '18px 0 10px' },
+  sectionTitle: { fontSize: 22, fontWeight: 700 as const },
+  itemsCount: { color: '#6b7280' },
+  tableWrap: { border: '1px solid #d1d5db', borderRadius: 16, overflow: 'hidden', background: '#fff' },
+  table: { width: '100%', borderCollapse: 'separate' as const, borderSpacing: 0 },
+  th: { textAlign: 'left' as const, padding: '14px 16px', fontWeight: 700 as const, borderBottom: '1px solid #d1d5db', background: '#f9fafb' },
+  td: { padding: '12px 16px', borderBottom: '1px solid #e5e7eb', verticalAlign: 'top' as const },
+  titleCell: { fontWeight: 600 as const, maxWidth: 360, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' as const },
+  chipRow: { display: 'flex', gap: 8, flexWrap: 'wrap' as const, color: '#111827' },
+  chip: { background: '#f3f4f6', padding: '3px 8px', borderRadius: 999, fontSize: 12 },
+  msg: { maxWidth: 340, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' as const },
+  actions: { display: 'flex', gap: 8, flexWrap: 'wrap' as const },
+  btn: { border: 'none', color: '#fff', padding: '8px 12px', borderRadius: 10, cursor: 'pointer' },
   btnDelete: { background: '#F4320B' },
   btnHold: { background: '#F48B0B' },
   btnProcess: { background: '#09C816' },
-  empty: { padding: 16, color: 'rgba(0,0,0,.6)' },
-  loading: { margin: '8px 0' },
-  error: { margin: '8px 0', color: '#b91c1c' },
+  loading: { marginTop: 8 },
+  error: { marginTop: 8, color: '#b91c1c' },
 } as const;
 
 export function AdminRequestList({ token, onLogout }: { token: string | null; onLogout: () => void; }) {
@@ -87,9 +95,10 @@ export function AdminRequestList({ token, onLogout }: { token: string | null; on
       if (raw && typeof raw === 'object' && !Array.isArray(raw) &&
           ('pending' in raw || 'held' in raw || 'processed' in raw)) {
         const g = raw as ApiRequestsGrouped;
-        setPending((g.pending ?? []).slice().sort((a,b)=>+new Date(a.requestedAt)-+new Date(b.requestedAt)));
-        setHeld((g.held ?? []).slice().sort((a,b)=>+new Date(a.requestedAt)-+new Date(b.requestedAt)));
-        setProcessed((g.processed ?? []).slice().sort((a,b)=>+new Date(b.processedAt||0)-+new Date(a.processedAt||0)));
+        const p = (g.pending ?? []).slice().sort((a,b)=>+new Date(a.requestedAt)-+new Date(b.requestedAt));
+        const h = (g.held ?? []).slice().sort((a,b)=>+new Date(a.requestedAt)-+new Date(b.requestedAt));
+        const d = (g.processed ?? []).slice().sort((a,b)=>+new Date(b.processedAt||0)-+new Date(a.processedAt||0));
+        setPending(p); setHeld(h); setProcessed(d);
       } else if (Array.isArray(raw)) {
         const p: RequestItem[] = [];
         const h: RequestItem[] = [];
@@ -122,54 +131,104 @@ export function AdminRequestList({ token, onLogout }: { token: string | null; on
   const doProcess = async (id: string) => { await postJSON(`/api/requests/${id}/process`, token); await load(); };
   const doDelete = async (id: string) => { await postJSON(`/api/requests/${id}`, token, 'DELETE'); await load(); };
 
-  const Row = ({ r, showActions }:{ r:RequestItem; showActions:boolean }) => (
-    <li style={styles.row}>
-      <div style={styles.rowTop}>
-        <div style={styles.title}>{label(r)}</div>
-        <div style={styles.meta}>
-          {r.requestedBy ? <span style={styles.chip}>By: {r.requestedBy}</span> : null}
-          {r.ipAddress ? <span style={styles.chip}>IP: {r.ipAddress}</span> : null}
-          <span style={styles.chip}>At: {fmt(r.requestedAt)}</span>
-          {r.message ? <span style={styles.chip}>Msg: {r.message}</span> : null}
-        </div>
-      </div>
-      {showActions && (
-        <div style={styles.actionBar}>
-          <button onClick={()=>doDelete(r.id)} style={{...styles.btn, ...styles.btnDelete}}>Delete</button>
-          {((r as any).status === 'held' || (r as any).held) ? (
-            <button onClick={()=>doUnhold(r.id)} style={{...styles.btn, ...styles.btnHold}}>Release</button>
-          ) : (
-            <button onClick={()=>doHold(r.id)} style={{...styles.btn, ...styles.btnHold}}>Hold</button>
-          )}
-          <button onClick={()=>doProcess(r.id)} style={{...styles.btn, ...styles.btnProcess}}>Process</button>
-        </div>
-      )}
-    </li>
+  const renderTable = (items: RequestItem[], includeActions: boolean) => (
+    <div style={styles.tableWrap as React.CSSProperties}>
+      <table style={styles.table as React.CSSProperties}>
+        <thead>
+          <tr>
+            <th style={{...styles.th, width: '26%'}}>Song</th>
+            <th style={{...styles.th, width: '12%'}}>Requested By</th>
+            <th style={{...styles.th, width: '18%'}}>Message</th>
+            <th style={{...styles.th, width: '14%'}}>Requested Time</th>
+            <th style={{...styles.th, width: '12%'}}>IP Address</th>
+            <th style={{...styles.th, width: '14%'}}>Processed Time</th>
+            <th style={{...styles.th, width: '8%'}}>Status</th>
+            {includeActions ? <th style={{...styles.th, width: '16%'}}>Actions</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {items.length === 0 ? (
+            <tr>
+              <td style={{...styles.td, padding: '18px 16px'}} colSpan={includeActions ? 8 : 7}>
+                <span style={{ color: 'rgba(0,0,0,.55)' }}>No items.</span>
+              </td>
+            </tr>
+          ) : items.map((r) => (
+            <tr key={r.id}>
+              <td style={{...styles.td}}>
+                <div style={styles.titleCell as React.CSSProperties}>{label(r)}</div>
+              </td>
+              <td style={styles.td}>{r.requestedBy || '—'}</td>
+              <td style={{...styles.td}}>
+                <div style={styles.msg as React.CSSProperties}>{r.message || '—'}</div>
+              </td>
+              <td style={styles.td}>{fmt(r.requestedAt)}</td>
+              <td style={styles.td}>{r.ipAddress || '—'}</td>
+              <td style={styles.td}>{fmt(r.processedAt)}</td>
+              <td style={styles.td}>{r.status ? r.status[0].toUpperCase() + r.status.slice(1) : (r.processedAt ? 'Processed' : 'Pending')}</td>
+              {includeActions ? (
+                <td style={styles.td}>
+                  <div style={styles.actions as React.CSSProperties}>
+                    <button onClick={()=>doDelete(r.id)} style={{...styles.btn, ...styles.btnDelete}}>Delete</button>
+                    {((r as any).status === 'held' || (r as any).held) ? (
+                      <button onClick={()=>doUnhold(r.id)} style={{...styles.btn, ...styles.btnHold}}>Release</button>
+                    ) : (
+                      <button onClick={()=>doHold(r.id)} style={{...styles.btn, ...styles.btnHold}}>Hold</button>
+                    )}
+                    <button onClick={()=>doProcess(r.id)} style={{...styles.btn, ...styles.btnProcess}}>Process</button>
+                  </div>
+                </td>
+              ) : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 
-  const Section = ({ title, items, showActions }:{ title:string; items:RequestItem[]; showActions:boolean }) => (
-    <section style={styles.section}>
-      <h2 style={styles.h2}>{title} <span style={{opacity:.7}}>({items?.length || 0})</span></h2>
-      <ul style={styles.list as React.CSSProperties}>
-        {items && items.length > 0 ? items.map(r => <Row key={r.id} r={r} showActions={showActions} />) : <li style={styles.empty}>No items.</li>}
-      </ul>
-    </section>
-  );
+  const totals = { pending: pending.length, held: held.length, processed: processed.length };
 
   return (
     <div style={styles.page}>
       <div style={styles.wrap as React.CSSProperties}>
-        <header style={styles.header}>
-          <h1 style={styles.h1}>Requests Admin</h1>
-          <button onClick={onLogout} style={styles.logout}>Log out</button>
-        </header>
+        {/* Top brand + counts + logout */}
+        <div style={styles.topBar}>
+          <div style={styles.brand}>Song Requests</div>
+          <div style={{display:'flex', alignItems:'center', gap: 24}}>
+            <div style={styles.counts}>
+              <span>Pending: {totals.pending}</span>
+              <span style={{margin: '0 12px'}}>Held: {totals.held}</span>
+              <span>Processed: {totals.processed}</span>
+            </div>
+            <button onClick={onLogout} style={styles.logout}>Log out</button>
+          </div>
+        </div>
+
+        <h1 style={styles.h1}>Song Requests (Admin)</h1>
+
+        {/* Pending */}
+        <div style={styles.sectionHead}>
+          <div style={styles.sectionTitle}>Pending Requests</div>
+          <div style={styles.itemsCount}>{pending.length} items</div>
+        </div>
+        {renderTable(pending, true)}
+
+        {/* Held */}
+        <div style={styles.sectionHead}>
+          <div style={styles.sectionTitle}>Held Requests</div>
+          <div style={styles.itemsCount}>{held.length} items</div>
+        </div>
+        {renderTable(held, true)}
+
+        {/* Processed */}
+        <div style={styles.sectionHead}>
+          <div style={styles.sectionTitle}>Processed Requests</div>
+          <div style={styles.itemsCount}>{processed.length} items</div>
+        </div>
+        {renderTable(processed, false)}
 
         {error ? <div style={styles.error}>{error}</div> : null}
         {loading ? <div style={styles.loading}>Loading…</div> : null}
-
-        <Section title="Pending Requests" items={pending} showActions={true} />
-        <Section title="Held Requests" items={held} showActions={true} />
-        <Section title="Processed Requests" items={processed} showActions={false} />
       </div>
     </div>
   );
