@@ -59,7 +59,7 @@ export function TrackCard(props: any) {
 
           if (data?.error === 'COOLDOWN_ACTIVE') {
             const when = data.nextAllowedAt ? new Date(data.nextAllowedAt).toLocaleString() : 'later';
-            setErrorMessage(`That song was requested recently. You can request it again after ${when}.`);
+            setErrorMessage(\`That song was requested recently. You can request it again after \${when}.\`);
             return;
           }
 
@@ -67,8 +67,8 @@ export function TrackCard(props: any) {
             const when = data.nextAllowedAt ? new Date(data.nextAllowedAt).toLocaleString() : 'later';
             const scope = data.window === 'hour' ? 'this hour' : 'today';
             const limit =
-              typeof data.limit === 'number' ? ` (limit: ${data.limit} per ${scope})` : '';
-            setErrorMessage(`You’ve reached the request limit${limit}. Try again after ${when}.`);
+              typeof data.limit === 'number' ? \` (limit: \${data.limit} per \${scope})\` : '';
+            setErrorMessage(\`You’ve reached the request limit\${limit}. Try again after \${when}.\`);
             return;
           }
 
