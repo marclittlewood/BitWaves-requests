@@ -1,72 +1,99 @@
 import { v4 as uuidv4 } from 'uuid';
-import { RequestDto } from '../shared/RequestDto';
+import { RequestDto, RequestStatus } from '../shared/RequestDto';
+
+const AUTO_PROCESS_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 
 export class Requests {
-    private requests: RequestDto[];
+  private requests: RequestDto[] = [];
 
-    constructor() {
-        this.requests = [];
-    }
+  // Add a request; ensures IP and timestamp are captured; defaults to pending + 5min delay
+  async addRequest(trackGuid: string, requestedBy: string, message?: string, ipAddress?: string) {
+    const now = new Date();
+    const req: RequestDto = {
+      id: uuidv4(),
+      trackGuid,
+      requestedBy,
+      message,
+      ipAddress,
+      requestedAt: now,
+      status: 'pending',
+      autoProcessAt: new Date(now.getTime() + AUTO_PROCESS_DELAY_MS)
+    };
+    this.requests.push(req);
+    return req;
+  }
 
-    // Add a request; ensures IP and timestamp are captured
-    async addRequest(trackGuid: string, requestedBy: string, message?: string, ipAddress?: string) {
-        this.requests.push({
-            id: uuidv4(),
-            trackGuid,
-            requestedBy,
-            message,
-            ipAddress,
-            requestedAt: new Date(),
-            processedAt: undefined
-        });
+  // Return requests, optionally filtered by status, newest-first
+  async getRequests(status: 'all' | RequestStatus = 'all', limit: number = 200) {
+    let list = this.requests.slice();
+    if (status !== 'all') {
+      list = list.filter(r => r.status === status);
     }
+    return list.sort((a,b) => +new Date(b.requestedAt) - +new Date(a.requestedAt)).slice(0, limit);
+  }
 
-    async init() {
-        this.requests = [];
-    }
+  async deleteRequest(id: string) {
+    const req = this.requests.find(r => r.id === id);
+    if (!req) return false;
+    // mark deleted, keep in memory for audit (can be filtered out by client if desired)
+    req.status = 'deleted';
+    return true;
+  }
 
-    async getRequests() {
-        return this.requests;
-    }
+  async holdRequest(id: string) {
+    const req = this.requests.find(r => r.id === id);
+    if (!req) return false;
+    req.status = 'held';
+    return true;
+  }
 
-    async getUnprocessedRequests() {
-        return this.requests.filter(r => !r.processedAt);
-    }
+  async unholdRequest(id: string) {
+    const req = this.requests.find(r => r.id === id);
+    if (!req) return false;
+    // resume pending and set a fresh 5-minute delay from now
+    const now = new Date();
+    req.status = 'pending';
+    req.autoProcessAt = new Date(now.getTime() + AUTO_PROCESS_DELAY_MS);
+    return true;
+  }
 
-    async isTrackAlreadyRequested(trackGuid: string) {
-        return this.requests.some(r => r.trackGuid === trackGuid && !r.processedAt);
-    }
+  async forceProcessNow(id: string) {
+    const req = this.requests.find(r => r.id === id);
+    if (!req) return false;
+    // Allow immediate processing by the processor loop
+    req.status = 'pending';
+    req.autoProcessAt = new Date(Date.now() - 1000);
+    return true;
+  }
 
-    async markProcessed(id: string) {
-        const request = this.requests.find(r => r.id === id);
-        if (request) {
-            request.processedAt = new Date();
-        }
-    }
+  async markProcessed(id: string) {
+    const req = this.requests.find(r => r.id === id);
+    if (!req) return false;
+    req.status = 'processed';
+    req.processedAt = new Date();
+    return true;
+  }
 
-    async deleteRequest(id: string) {
-        const requestIndex = this.requests.findIndex(r => r.id === id);
-        if (requestIndex !== -1) {
-            this.requests.splice(requestIndex, 1);
-            return true;
-        }
-        return false;
-    }
+  // Internal: eligible requests that can be processed automatically
+  async getAutoProcessEligible(): Promise<RequestDto[]> {
+    const now = Date.now();
+    return this.requests.filter(r => r.status === 'pending' && new Date(r.autoProcessAt).getTime() <= now);
+  }
 
-    // Rolling-window counter by IP (ms window)
-    private countInWindowByIp(ipAddress: string, windowMs: number): number {
-        const now = Date.now();
-        return this.requests.filter(r => {
-            if (!r.ipAddress) return false;
-            const ts = new Date(r.requestedAt).getTime();
-            return r.ipAddress === ipAddress && (now - ts) <= windowMs;
-        }).length;
-    }
+  // Helpers for rate limiting by IP, rolling windows
+  private countInWindowByIp(ipAddress: string, windowMs: number): number {
+    const now = Date.now();
+    return this.requests.filter(r => {
+      if (!r.ipAddress) return false;
+      const ts = new Date(r.requestedAt).getTime();
+      return r.ipAddress === ipAddress && (now - ts) <= windowMs;
+    }).length;
+  }
 
-    // Public helper to fetch counts for current hour/day (rolling windows)
-    async getCountsByIp(ipAddress: string) {
-        const perHour = this.countInWindowByIp(ipAddress, 60 * 60 * 1000);
-        const perDay  = this.countInWindowByIp(ipAddress, 24 * 60 * 60 * 1000);
-        return { perHour, perDay };
-    }
+  // Public helper to fetch counts for current hour/day (rolling windows)
+  async getCountsByIp(ipAddress: string) {
+    const perHour = this.countInWindowByIp(ipAddress, 60 * 60 * 1000);
+    const perDay  = this.countInWindowByIp(ipAddress, 24 * 60 * 60 * 1000);
+    return { perHour, perDay };
+  }
 }
