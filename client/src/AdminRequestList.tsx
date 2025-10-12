@@ -1,12 +1,145 @@
 import React from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useRequestsQuery, useDeleteRequestMutation, useHoldRequestMutation, useProcessRequestMutation } from './queries/Requests';
+import {
+  useRequestsQuery,
+  useDeleteRequestMutation,
+  useHoldRequestMutation,
+  useProcessRequestMutation
+} from './queries/Requests';
 import { RequestDto } from '../../shared/RequestDto';
 import { useTracksQuery } from './queries/Tracks';
 
 interface AdminRequestListProps {
   token: string | null;
   onLogout: () => void;
+}
+
+function SectionTable({
+  title,
+  rows,
+  trackMap,
+  showActions,
+  onDelete,
+  onHold,
+  onProcess,
+}: {
+  title: string;
+  rows: RequestDto[];
+  trackMap: Map<string, string>;
+  showActions: boolean;
+  onDelete?: (id: string) => void;
+  onHold?: (id: string) => void;
+  onProcess?: (id: string) => void;
+}) {
+  const getTitle = (guid: string) => trackMap.get(guid) || guid;
+
+  return (
+    <div className="mb-8">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-xl font-semibold">{title}</h2>
+        <span className="text-sm text-gray-500">
+          {rows.length} item{rows.length === 1 ? '' : 's'}
+        </span>
+      </div>
+
+      <div className="overflow-x-auto bg-white rounded-xl shadow-sm border">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr className="text-left">
+              <th className="px-4 py-3 font-semibold">Song</th>
+              <th className="px-4 py-3 font-semibold">Requested By</th>
+              <th className="px-4 py-3 font-semibold">Message</th>
+              <th className="px-4 py-3 font-semibold">Requested Time</th>
+              <th className="px-4 py-3 font-semibold">IP Address</th>
+              <th className="px-4 py-3 font-semibold">Processed Time</th>
+              <th className="px-4 py-3 font-semibold">Status</th>
+              {showActions ? <th className="px-4 py-3 font-semibold">Actions</th> : null}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const created = new Date(r.requestedAt);
+              const processed = r.processedAt ? new Date(r.processedAt) : null;
+
+              const ActionsBar = showActions ? (
+                <div className="flex gap-2 flex-wrap pt-2">
+                  <button
+                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm"
+                    style={{ background: '#F4320B' }}
+                    onClick={() => onDelete && onDelete(r.id)}
+                  >
+                    Delete
+                  </button>
+                  <button
+                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm disabled:opacity-60"
+                    style={{ background: '#F48B0B' }}
+                    onClick={() => onHold && onHold(r.id)}
+                    disabled={r.status === 'held'}
+                  >
+                    Hold
+                  </button>
+                  <button
+                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm"
+                    style={{ background: '#09C816' }}
+                    onClick={() => onProcess && onProcess(r.id)}
+                  >
+                    Process
+                  </button>
+                </div>
+              ) : null;
+
+              return (
+                <React.Fragment key={r.id}>
+                  <tr className="align-top">
+                    <td className="px-4 py-3 whitespace-nowrap font-medium">
+                      {getTitle(r.trackGuid)}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {r.requestedBy || '-'}
+                    </td>
+                    <td className="px-4 py-3 max-w-[36ch]" title={r.message || ''}>
+                      {r.message ? (
+                        <span className="line-clamp-2">{r.message}</span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {created.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {r.ipAddress || '—'}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {processed ? processed.toLocaleString() : '—'}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100">
+                        {r.status || (r.processedAt ? 'processed' : 'pending')}
+                      </span>
+                    </td>
+                    {showActions ? <td className="px-4 py-3"></td> : null}
+                  </tr>
+
+                  {showActions ? (
+                    <tr className="border-b">
+                      <td className="px-4 pb-4 pt-0" colSpan={8}>
+                        {ActionsBar}
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr className="border-b">
+                      <td colSpan={7} className="p-0" />
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 export function AdminRequestList({ token, onLogout }: AdminRequestListProps) {
@@ -24,12 +157,38 @@ export function AdminRequestList({ token, onLogout }: AdminRequestListProps) {
   const holdMutation = useHoldRequestMutation(token, onLogout);
   const processMutation = useProcessRequestMutation(token, onLogout);
 
-  const getTitle = (guid: string) => trackMap.get(guid) || guid;
+  // Hide deleted; everything else shows.
+  const all = (requests || []).filter(r => r.status !== 'deleted');
+
+  // Three sections:
+  // 1) Pending: statuses 'pending' + 'processing'
+  // 2) Held: status 'held'
+  // 3) Processed: status 'processed'
+  const pending = all
+    .filter(r => r.status === 'pending' || r.status === 'processing')
+    .sort((a, b) => +new Date(b.requestedAt) - +new Date(a.requestedAt));
+
+  const held = all
+    .filter(r => r.status === 'held')
+    .sort((a, b) => +new Date(b.requestedAt) - +new Date(a.requestedAt));
+
+  const processed = all
+    .filter(r => r.status === 'processed')
+    .sort((a, b) => {
+      const aT = new Date(a.processedAt || a.requestedAt).getTime();
+      const bT = new Date(b.processedAt || b.requestedAt).getTime();
+      return bT - aT;
+    });
 
   return (
     <div className="mx-auto w-full max-w-7xl p-4">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-semibold">Song Requests (Admin)</h1>
+        <div className="flex items-center gap-3 text-sm text-gray-600">
+          <span>Pending: {pending.length}</span>
+          <span>Held: {held.length}</span>
+          <span>Processed: {processed.length}</span>
+        </div>
         <button
           className="px-4 py-2 rounded-xl border bg-white hover:bg-gray-50 shadow-sm"
           onClick={onLogout}
@@ -40,79 +199,35 @@ export function AdminRequestList({ token, onLogout }: AdminRequestListProps) {
         </button>
       </div>
 
-      <div className="overflow-x-auto bg-white rounded-xl shadow-sm border">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr className="text-left">
-              <th className="px-4 py-3 font-semibold">Song</th>
-              <th className="px-4 py-3 font-semibold">Requested By</th>
-              <th className="px-4 py-3 font-semibold">Message</th>
-              <th className="px-4 py-3 font-semibold">Requested Time</th>
-              <th className="px-4 py-3 font-semibold">IP Address</th>
-              <th className="px-4 py-3 font-semibold">Processed Time</th>
-              <th className="px-4 py-3 font-semibold">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(requests || []).map((r) => {
-              const created = new Date(r.requestedAt);
-              const processed = r.processedAt ? new Date(r.processedAt) : null;
+      {/* Pending */}
+      <SectionTable
+        title="Pending Requests"
+        rows={pending}
+        trackMap={trackMap}
+        showActions={true}
+        onDelete={(id) => deleteMutation.mutate(id)}
+        onHold={(id) => holdMutation.mutate(id)}
+        onProcess={(id) => processMutation.mutate(id)}
+      />
 
-              const ActionsBar = (
-                <div className="flex gap-2 flex-wrap pt-2">
-                  <button
-                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm"
-                    style={{ background: '#F4320B' }}
-                    onClick={() => deleteMutation.mutate(r.id)}
-                  >
-                    Delete
-                  </button>
-                  <button
-                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm disabled:opacity-60"
-                    style={{ background: '#F48B0B' }}
-                    onClick={() => holdMutation.mutate(r.id)}
-                    disabled={r.status === 'held'}
-                  >
-                    Hold
-                  </button>
-                  <button
-                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm"
-                    style={{ background: '#09C816' }}
-                    onClick={() => processMutation.mutate(r.id)}
-                  >
-                    Process
-                  </button>
-                </div>
-              );
+      {/* Held */}
+      <SectionTable
+        title="Held Requests"
+        rows={held}
+        trackMap={trackMap}
+        showActions={true}
+        onDelete={(id) => deleteMutation.mutate(id)}
+        onHold={(id) => holdMutation.mutate(id)}
+        onProcess={(id) => processMutation.mutate(id)}
+      />
 
-              return (
-                <React.Fragment key={r.id}>
-                  <tr className="align-top">
-                    <td className="px-4 py-3 whitespace-nowrap font-medium">{getTitle(r.trackGuid)}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{r.requestedBy || '-'}</td>
-                    <td className="px-4 py-3 max-w-[36ch]" title={r.message || ''}>
-                      {r.message ? <span className="line-clamp-2">{r.message}</span> : <span className="text-gray-400">—</span>}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">{created.toLocaleString()}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{r.ipAddress || '—'}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{processed ? processed.toLocaleString() : '—'}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100">
-                        {r.status || (r.processedAt ? 'processed' : 'pending')}
-                      </span>
-                    </td>
-                  </tr>
-                  <tr className="border-b">
-                    <td className="px-4 pb-4 pt-0" colSpan={7}>
-                      {ActionsBar}
-                    </td>
-                  </tr>
-                </React.Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {/* Processed (no actions) */}
+      <SectionTable
+        title="Processed Requests"
+        rows={processed}
+        trackMap={trackMap}
+        showActions={false}
+      />
     </div>
   );
 }
