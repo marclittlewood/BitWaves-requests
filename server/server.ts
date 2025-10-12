@@ -1,160 +1,97 @@
 import express, { Request, Response } from 'express';
+import cors from 'cors';
 import path from 'path';
-import dotenv from 'dotenv';
-import { Tracks } from './Tracks';
+import bodyParser from 'body-parser';
 import { Requests } from './Requests';
-import { PlayItLiveApiClient } from './PlayItLiveApiClient';
+import { RequestAgent } from './RequestAgent';
 import { RequestProcessor } from './RequestProcessor';
-import { RequestAgent } from "./RequestAgent";
-import { authenticateJWT, login } from './auth';
-import { SettingsDto } from '../shared/SettingsDto';
-
-if (process.env.NODE_ENV !== 'production') {
-  dotenv.config();
-}
 
 const app = express();
-app.set('trust proxy', true);
-app.use(express.json());
-app.use(express.static(path.join(__dirname, '../client/dist')));
+app.use(cors());
+app.use(bodyParser.json());
 
-const PORT = Number(process.env.PORT || 3000);
-const MAX_REQUESTS_PER_HOUR = Number(process.env.MAX_REQUESTS_PER_HOUR || 4);
-const MAX_REQUESTS_PER_DAY  = Number(process.env.MAX_REQUESTS_PER_DAY  || 20);
-const MAX_MESSAGE_LENGTH = 150;
-
-const requiredEnvVars = ['PLAYIT_LIVE_BASE_URL', 'PLAYIT_LIVE_API_KEY'];
-requiredEnvVars.forEach((varName) => {
-  if (!process.env[varName]) {
-    console.error(`Error: ${varName} is required but not set`);
-  }
-});
-
-const playItLiveBaseUrl = process.env.PLAYIT_LIVE_BASE_URL!;
-const playItLiveApiKey = process.env.PLAYIT_LIVE_API_KEY!;
-const requestableTrackGroupName = process.env.REQUESTABLE_TRACK_GROUP_NAME;
-
-const playItLiveApiClient = new PlayItLiveApiClient(playItLiveBaseUrl, playItLiveApiKey);
-const tracks = new Tracks(playItLiveApiClient, requestableTrackGroupName);
-tracks.init();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
+const PLAYIT_LIVE_BASE_URL = process.env.PLAYIT_LIVE_BASE_URL || '';
+const PLAYIT_LIVE_API_KEY = process.env.PLAYIT_LIVE_API_KEY || '';
+const REQUESTABLE_TRACK_GROUP_NAME = process.env.REQUESTABLE_TRACK_GROUP_NAME || '';
 
 const requests = new Requests();
-requests.init();
+const requestAgent = new RequestAgent(PLAYIT_LIVE_BASE_URL, PLAYIT_LIVE_API_KEY, REQUESTABLE_TRACK_GROUP_NAME);
+new RequestProcessor(requests, requestAgent);
 
-const requestAgent = new RequestAgent(playItLiveApiClient, tracks);
-const requestProcessor = new RequestProcessor(requests, requestAgent);
-
-function getClientIp(req: Request): string {
-  const xff = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim();
-  const raw = xff ?? req.socket.remoteAddress ?? (req as any).ip ?? '';
-  const ip = raw.startsWith('::ffff:') ? raw.slice(7) : raw;
-  return ip || 'unknown';
+// Helpers
+function getClientIp(req: Request) {
+  const xff = (req.headers['x-forwarded-for'] as string) || '';
+  return (xff.split(',')[0] || '').trim() || (req.socket && (req.socket as any).remoteAddress) || (req as any).ip || 'unknown';
 }
 
-// Routes
-app.get('/api/tracks', (req, res) => {
-  res.json(tracks.getRequestableTracks());
-});
+// Health
+app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 
-app.get('/api/settings', (req, res) => {
-  const settings: SettingsDto = { maxMessageLength: MAX_MESSAGE_LENGTH };
-  res.json(settings);
-});
-
+// Public: submit a track request
 app.post('/api/requestTrack', async (req: Request, res: Response) => {
-  // Per-IP rate limit (distinct from per-track cooldown)
-  try {
-    const ipAddress = getClientIp(req);
-    const maxPerHour = Number(process.env.REQUESTS_PER_HOUR ?? 3);
-    const maxPerDay  = Number(process.env.REQUESTS_PER_DAY  ?? 12);
-    const rl = requests.isRateLimited(ipAddress, maxPerHour, maxPerDay);
-    if (rl.blocked) {
-      res.status(429).json({
-        success: false,
-        error: 'TOO_MANY_REQUESTS',
-        window: rl.window,
-        limit: rl.limit,
-        nextAllowedAt: rl.nextAllowedAt
-      });
-      return;
-    }
-  } catch (e) {
-    console.error('Rate limit check error', e);
-  }
-
   try {
     const { trackGuid, requestedBy, message } = req.body || {};
-    const clientIp = getClientIp(req);
-
-    const messageString = (message ?? '').toString();
-    const trimmedMessage = messageString.slice(0, MAX_MESSAGE_LENGTH);
-
-    if (!trackGuid || !requestedBy) {
-      res.status(400).json({ success: false, message: 'Track GUID and requester name are required' });
-      return;
+    if (!trackGuid) {
+      return res.status(400).json({ success: false, message: 'trackGuid is required' });
     }
+    // Inline client IP (no separate variable needed elsewhere)
+    const ip = getClientIp(req);
 
-    const { perHour, perDay } = await requests.getCountsByIp(clientIp);
-    if (perHour >= MAX_REQUESTS_PER_HOUR) {
-      res.status(429).json({ success: false, message: `Per-IP limit reached: max ${MAX_REQUESTS_PER_HOUR} requests per hour.` });
-      return;
-    }
-    if (perDay >= MAX_REQUESTS_PER_DAY) {
-      res.status(429).json({ success: false, message: `Per-IP limit reached: max ${MAX_REQUESTS_PER_DAY} requests per 24 hours.` });
-      return;
-    }
-
-    await requests.addRequest(trackGuid, requestedBy, trimmedMessage, clientIp, ipAddress);
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error processing request:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    // (Optional) rate limiting & cooldown checks would be inside Requests if implemented.
+    await requests.addRequest(trackGuid, requestedBy || '', message || '', ip);
+    return res.json({ success: true });
+  } catch (e: any) {
+    console.error('requestTrack error', e);
+    return res.status(500).json({ success: false, message: 'Failed to submit request' });
   }
 });
 
-app.post('/api/login', login);
-
-
-app.get('/api/requests', authenticateJWT, async (req, res) => {
-  try {
-    const status = (req.query.status as string) || 'unprocessed'; // 'unprocessed' | 'processed' | 'all'
-    const limit = Number(req.query.limit || 200);
-
-    const all = await requests.getRequests();
-
-    let list = all;
-    if (status === 'unprocessed') {
-      list = all.filter(r => !r.processedAt);
-    } else if (status === 'processed') {
-      list = all.filter(r => !!r.processedAt);
-    } // 'all' => no filtering
-
-    // newest first, by requestedAt (fallback to processedAt if needed)
-    list.sort((a, b) => {
-      const aTs = new Date((a as any).requestedAt ?? (a as any).processedAt ?? 0).getTime();
-      const bTs = new Date((b as any).requestedAt ?? (b as any).processedAt ?? 0).getTime();
-      return bTs - aTs;
-    });
-
-    res.json(limit ? list.slice(0, limit) : list);
-  } catch (e) {
-    console.error('Error fetching requests:', e);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+// Admin auth (very simple header-based)
+app.use('/api', (req, res, next) => {
+  if (req.path === '/requestTrack') return next();
+  const auth = req.headers['x-admin-key'] || req.headers['x-admin-password'];
+  if (auth && String(auth) === ADMIN_PASSWORD) return next();
+  return res.status(401).json({ success: false, message: 'Unauthorized' });
 });
-app.delete('/api/requests/:id', authenticateJWT, async (req, res) => {
+
+// Admin: list requests
+app.get('/api/requests', async (_req, res) => {
+  const all = await requests.getAll();
+  res.json({ success: true, data: all });
+});
+
+// Admin: hold
+app.post('/api/requests/:id/hold', async (req, res) => {
+  const ok = await requests.holdRequest(req.params.id);
+  res.json({ success: ok });
+});
+
+// Admin: unhold
+app.post('/api/requests/:id/unhold', async (req, res) => {
+  const ok = await requests.unholdRequest(req.params.id);
+  res.json({ success: ok });
+});
+
+// Admin: process now
+app.post('/api/requests/:id/process', async (req, res) => {
+  const ok = await requests.forceProcessNow(req.params.id);
+  res.json({ success: ok });
+});
+
+// Admin: delete
+app.delete('/api/requests/:id', async (req, res) => {
   const ok = await requests.deleteRequest(req.params.id);
-  if (ok) {
-    res.json({ success: true });
-  } else {
-    res.status(404).json({ success: false, message: 'Request not found' });
-  }
+  res.json({ success: ok });
 });
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/dist', 'index.html'));
+// Serve client (assumes Parcel outputs to client/dist)
+app.use(express.static(path.join(__dirname, '..', 'client', 'dist')));
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
 });
 
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server listening on :${PORT}`);
 });
