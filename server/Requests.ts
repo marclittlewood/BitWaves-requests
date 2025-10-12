@@ -6,6 +6,12 @@ const AUTO_PROCESS_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 export class Requests {
   private requests: RequestDto[] = [];
 
+  async init() {
+    // No-op init; keep for compatibility with server bootstrap
+    return;
+  }
+
+
   // Add a request; ensures IP and timestamp are captured; defaults to pending + 5min delay
   async addRequest(trackGuid: string, requestedBy: string, message?: string, ipAddress?: string) {
     const now = new Date();
