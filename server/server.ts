@@ -39,7 +39,8 @@ app.post('/api/requestTrack', async (req: Request, res: Response) => {
     const ip = getClientIp(req);
 
     // (Optional) rate limiting & cooldown checks would be inside Requests if implemented.
-    await requests.addRequest(trackGuid, requestedBy || '', message || '', ip);
+    await requests.addRequest(trackGuid, requestedBy, message, ipAddress);
+    requests.addRequest(trackGuid, requestedBy || '', message || '', ip);
     return res.json({ success: true });
   } catch (e: any) {
     console.error('requestTrack error', e);
