@@ -17,6 +17,8 @@ export class RequestProcessor {
   }
 
   async processRequests() {
+    // First, auto-release any holds older than the expiry window
+    await this.requests.releaseExpiredHolds();
     if (this.isRunning) return;
     this.isRunning = true;
     try {

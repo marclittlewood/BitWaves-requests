@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { RequestDto, RequestStatus } from '../shared/RequestDto';
 
 const AUTO_PROCESS_DELAY_MS = 5 * 60 * 1000; // 5 minutes
+const HOLD_EXPIRE_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 export class Requests {
   private requests: RequestDto[] = [];
@@ -46,6 +47,7 @@ export class Requests {
     const req = this.requests.find(r => r.id === id);
     if (!req) return false;
     req.status = 'held';
+    req.holdExpiresAt = new Date(Date.now() + HOLD_EXPIRE_MS);
     return true;
   }
 
@@ -53,6 +55,7 @@ export class Requests {
     const req = this.requests.find(r => r.id === id);
     if (!req) return false;
     const now = new Date();
+    req.holdExpiresAt = undefined;
     req.status = 'pending';
     req.autoProcessAt = new Date(now.getTime() + AUTO_PROCESS_DELAY_MS);
     return true;
@@ -122,7 +125,26 @@ export class Requests {
     return new Date(Math.max(...candidates));
   }
 
-  isWithinCooldown(trackGuid: string, cooldownMs: number): { blocked: boolean, nextAllowedAt?: Date } {
+  
+  /**
+   * Auto-release held requests whose hold has expired.
+   * Sets status back to 'pending' and makes them immediately eligible.
+   */
+  async releaseExpiredHolds() {
+    const now = Date.now();
+    for (const r of this.requests) {
+      if (r.status === 'held' && r.holdExpiresAt) {
+        const exp = new Date(r.holdExpiresAt).getTime();
+        if (exp <= now) {
+          r.status = 'pending';
+          // Make eligible on the next processor tick
+          r.autoProcessAt = new Date(Date.now() - 1000);
+          r.holdExpiresAt = undefined;
+        }
+      }
+    }
+  }
+isWithinCooldown(trackGuid: string, cooldownMs: number): { blocked: boolean, nextAllowedAt?: Date } {
     const last = this.getLastActivityForTrack(trackGuid);
     if (!last) return { blocked: false };
     const nextAllowed = new Date(last.getTime() + cooldownMs);
