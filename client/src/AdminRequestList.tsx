@@ -226,7 +226,7 @@ export function AdminRequestList({ token, onLogout }: AdminRequestListProps) {
         title="Processed Requests"
         rows={processed}
         trackMap={trackMap}
-        showActions={true}
+        showActions={false}
       />
     </div>
   );

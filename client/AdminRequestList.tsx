@@ -242,7 +242,7 @@ export function AdminRequestList({ token, onLogout }: AdminRequestListProps) {
         title="Processed Requests"
         rows={bucket.Processed}
         trackMap={trackMap}
-        showActions={true}
+        showActions={false}
       />
     </div>
   );

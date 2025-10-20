@@ -164,7 +164,7 @@ app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res:
   try {
     const id = req.params.id;
 
-    // Load the request first to detect 'held' state
+    // Load first so we can handle 'held'
     const allBefore = await requests.getRequests('all');
     const existing = allBefore.find(r => r.id === id);
     if (!existing) {
@@ -172,7 +172,7 @@ app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res:
       return;
     }
 
-    // If it's held, unhold it so we can claim it
+    // If held, unhold so we can claim
     if (existing.status === 'held') {
       const unheld = await requests.unholdRequest(id);
       if (!unheld) {
@@ -181,13 +181,14 @@ app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res:
       }
     }
 
-    // Claim for processing (requires 'pending' state)
+    // Claim for immediate processing
     const claimed = await requests.setProcessing(id, true);
     if (!claimed) {
       res.status(409).json({ success: false, message: 'Unable to claim request for processing' });
       return;
     }
 
+    // Re-fetch for TS narrowing
     const all = await requests.getRequests('all');
     const found = all.find(r => r.id === id);
     if (!found) {
@@ -236,6 +237,7 @@ app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res:
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
+
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../client/dist', 'index.html'));
