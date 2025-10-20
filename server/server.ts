@@ -221,9 +221,6 @@ app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res:
   }
 });
 
-  if (!ok) { res.status(404).json({ success: false, message: 'Request not found' }); return; }
-  res.json({ success: true });
-});
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../client/dist', 'index.html'));
