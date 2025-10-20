@@ -161,13 +161,83 @@ app.post('/api/requests/:id/unhold', authenticateJWT, async (req: Request, res: 
 });
 
 
+
 app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res: Response) => {
   try {
     const id = req.params.id;
-    // Claim for processing
+
+    // Load the request first to detect 'held' state
+    const allBefore = await requests.getRequests('all');
+    const existing = allBefore.find(r => r.id === id);
+    if (!existing) {
+      res.status(404).json({ success: false, message: 'Request not found' });
+      return;
+    }
+
+    // If it's held, unhold it so we can claim it
+    if (existing.status === 'held') {
+      const unheld = await requests.unholdRequest(id);
+      if (!unheld) {
+        res.status(409).json({ success: false, message: 'Unable to unhold request' });
+        return;
+      }
+    }
+
+    // Claim for processing (requires 'pending' state)
     const claimed = await requests.setProcessing(id, true);
     if (!claimed) {
-      res.status(404).json({ success: false, message: 'Request not found or not pending' });
+      res.status(409).json({ success: false, message: 'Unable to claim request for processing' });
+      return;
+    }
+
+    const allPairs = await requestAgent.getAvailableItems();
+    if (!allPairs || allPairs.length === 0) {
+      await requests.setProcessing(id, false);
+      res.status(409).json({ success: false, message: 'No available request slots in playout log.' });
+      return;
+    }
+
+    const all = await requests.getRequests('all');
+    const request = all.find(r => r.id === id);
+    if (!request) {
+      await requests.setProcessing(id, false);
+      res.status(404).json({ success: false, message: 'Request not found' });
+      return;
+    }
+
+    const note = `${request.requestedBy ?? ''}${request.message ? ' - ' + request.message : ''}`;
+
+    let processed = false;
+    for (const pair of allPairs) {
+      try {
+        const ok = await requestAgent.requestTrack(
+          request.trackGuid,
+          pair.breakNoteItemGuid,
+          pair.requestItemGuid,
+          note
+        );
+        if (ok) {
+          await requests.markProcessed(id);
+          processed = true;
+          break;
+        }
+      } catch (e) {
+        // try next pair
+      }
+    }
+
+    if (!processed) {
+      await requests.setProcessing(id, false);
+      res.status(502).json({ success: false, message: 'Failed to process request via PlayIt Live.' });
+      return;
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Immediate process error:', err);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
       return;
     }
 

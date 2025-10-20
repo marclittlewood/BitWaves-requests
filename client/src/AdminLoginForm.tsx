@@ -19,7 +19,7 @@ export function AdminLoginForm({
         <div className="w-full max-w-md p-6 mx-auto">
             <h1 className="text-3xl font-bold text-gray-800 mb-6 text-center">Admin Login</h1>
             
-            <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="bg-white rounded-md shadow-md p-6">
                 <form onSubmit={onSubmit}>
                     {error && (
                         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
