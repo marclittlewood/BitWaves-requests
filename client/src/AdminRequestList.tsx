@@ -61,7 +61,7 @@ function SectionTable({
               const created = new Date(r.requestedAt);
               const processed = r.processedAt ? new Date(r.processedAt) : null;
 
-              const ActionsBar = showActions ? (
+              const ActionsBar = (showActions && rows.some(r => r.status !== 'processed' && r.status !== 'deleted')) ? (
                 <div className="flex gap-2 flex-wrap pt-2">
                   <button
                     className="px-3 py-1.5 rounded-md text-white font-medium shadow"
