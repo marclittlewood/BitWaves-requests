@@ -160,8 +160,6 @@ app.post('/api/requests/:id/unhold', authenticateJWT, async (req: Request, res: 
   res.json({ success: true });
 });
 
-
-
 app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res: Response) => {
   try {
     const id = req.params.id;
@@ -220,8 +218,8 @@ app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res:
             processed = true;
             break;
           }
-        } catch (e) {
-          // try next pair
+        } catch {
+          // try next slot
         }
       }
 
@@ -238,59 +236,6 @@ app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res:
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
-      return;
-    }
-
-    const allPairs = await requestAgent.getAvailableItems();
-    if (!allPairs || allPairs.length === 0) {
-      await requests.setProcessing(id, false);
-      res.status(409).json({ success: false, message: 'No available request slots in playout log.' });
-      return;
-    }
-
-    // Find the exact request object
-    const all = await requests.getRequests('all');
-    const request = all.find(r => r.id === id);
-    if (!request) {
-      await requests.setProcessing(id, false);
-      res.status(404).json({ success: false, message: 'Request not found' });
-      return;
-    }
-
-    const note = `${request.requestedBy ?? ''}${request.message ? ' - ' + request.message : ''}`;
-
-    let processed = false;
-    for (const pair of allPairs) {
-      try {
-        const ok = await requestAgent.requestTrack(
-          request.trackGuid,
-          pair.breakNoteItemGuid,
-          pair.requestItemGuid,
-          note
-        );
-        if (ok) {
-          await requests.markProcessed(id);
-          processed = true;
-          break;
-        }
-      } catch (e) {
-        // try next pair
-      }
-    }
-
-    if (!processed) {
-      await requests.setProcessing(id, false);
-      res.status(502).json({ success: false, message: 'Failed to process request via PlayIt Live.' });
-      return;
-    }
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Immediate process error:', err);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
-});
-
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../client/dist', 'index.html'));
