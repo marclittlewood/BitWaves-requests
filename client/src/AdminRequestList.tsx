@@ -42,7 +42,7 @@ function SectionTable({
         </span>
       </div>
 
-      <div className="overflow-x-auto bg-white rounded-xl shadow-sm border">
+      <div className="overflow-x-auto bg-white rounded-xl shadow border border-gray-200">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50">
             <tr className="text-left">
@@ -64,14 +64,14 @@ function SectionTable({
               const ActionsBar = showActions ? (
                 <div className="flex gap-2 flex-wrap pt-2">
                   <button
-                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm"
+                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow"
                     style={{ background: '#F4320B' }}
                     onClick={() => onDelete && onDelete(r.id)}
                   >
                     Delete
                   </button>
                   <button
-                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm disabled:opacity-60"
+                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow disabled:opacity-60"
                     style={{ background: '#F48B0B' }}
                     onClick={() => onHold && onHold(r.id)}
                     disabled={r.status === 'held'}
@@ -79,7 +79,7 @@ function SectionTable({
                     Hold
                   </button>
                   <button
-                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow-sm"
+                    className="px-3 py-1.5 rounded-lg text-white font-medium shadow"
                     style={{ background: '#09C816' }}
                     onClick={() => onProcess && onProcess(r.id)}
                   >
@@ -190,7 +190,7 @@ export function AdminRequestList({ token, onLogout }: AdminRequestListProps) {
           <span>Processed: {processed.length}</span>
         </div>
         <button
-          className="px-4 py-2 rounded-xl border bg-white hover:bg-gray-50 shadow-sm"
+          className="px-4 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 shadow"
           onClick={onLogout}
           aria-label="Log out"
           title="Log out"
