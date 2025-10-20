@@ -10,11 +10,7 @@ export function useRequestsQuery(
     queryFn: async () => {
       const headers: HeadersInit = {};
       if (token) headers.Authorization = `Bearer ${token}`;
-      const response = await fetch('/api/requests?status=all&limit=200', { headers ,
-    refetchInterval: 5000,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true
-  });
+      const response = await fetch('/api/requests?status=all&limit=200', { headers });
       if (!response.ok) {
         if (response.status === 401 && onAuthError) onAuthError();
         throw new Error('Failed to fetch requests');

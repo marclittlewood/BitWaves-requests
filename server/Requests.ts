@@ -40,6 +40,9 @@ export class Requests {
     const req = this.requests.find(r => r.id === id);
     if (!req) return false;
     req.status = 'deleted';
+    req.processedAt = new Date();
+    // prevent any further auto-processing on deleted
+    req.autoProcessAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
     return true;
   }
 

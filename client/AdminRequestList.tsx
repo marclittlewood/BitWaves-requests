@@ -55,7 +55,7 @@ function SectionTable({
               <th className="px-4 py-3 font-semibold">IP Address</th>
               <th className="px-4 py-3 font-semibold">Processed Time</th>
               <th className="px-4 py-3 font-semibold">Status</th>
-              {showActions ? <th className="px-4 py-3 font-semibold">Actions</th> : null}
+              
             </tr>
           </thead>
           <tbody>
@@ -101,7 +101,7 @@ function SectionTable({
                     </td>
                     <td className="px-4 py-3 max-w-[150ch] whitespace-normal break-words" title={r.message || ''}>
                       {r.message ? (
-                        <span className="">{r.message}</span>
+                        <span>{r.message}</span>
                       ) : (
                         <span className="text-gray-400">—</span>
                       )}
@@ -117,15 +117,15 @@ function SectionTable({
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100">
-                        {r.status || (r.processedAt ? 'processed' : 'pending')}
+                        {r.status === 'deleted' ? 'Deleted' : (r.status || (r.processedAt ? 'processed' : 'pending'))}
                       </span>
                     </td>
-                    {showActions ? <td className="px-4 py-3"></td> : null}
+                    
                   </tr>
 
                   {showActions ? (
                     <tr className="border-b">
-                      <td className="px-4 pb-4 pt-0" colSpan={8}>
+                      <td className="px-4 pb-4 pt-0" colSpan={7}>
                         {ActionsBar}
                       </td>
                     </tr>
@@ -160,7 +160,7 @@ export function AdminRequestList({ token, onLogout }: AdminRequestListProps) {
   const processMutation = useProcessRequestMutation(token, onLogout);
 
   // Hide deleted; everything else shows.
-  const all = (requests || []).filter(r => r.status !== 'deleted');
+  const all = (requests || []);
 
   // Buckets
   const bucket = {
@@ -242,7 +242,7 @@ export function AdminRequestList({ token, onLogout }: AdminRequestListProps) {
         title="Processed Requests"
         rows={bucket.Processed}
         trackMap={trackMap}
-        showActions={false}
+        showActions={true}
       />
     </div>
   );
