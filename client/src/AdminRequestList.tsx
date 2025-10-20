@@ -97,9 +97,9 @@ function SectionTable({
                     <td className="px-4 py-3 whitespace-nowrap">
                       {r.requestedBy || '-'}
                     </td>
-                    <td className="px-4 py-3 max-w-[36ch]" title={r.message || ''}>
+                    <td className="px-4 py-3 max-w-[150ch] whitespace-normal break-words" title={r.message || ''}>
                       {r.message ? (
-                        <span className="line-clamp-2">{r.message}</span>
+                        <span className="">{r.message}</span>
                       ) : (
                         <span className="text-gray-400">—</span>
                       )}
