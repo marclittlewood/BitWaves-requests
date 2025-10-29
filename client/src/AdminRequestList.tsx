@@ -31,7 +31,7 @@ function SectionTable({
   onHold?: (id: string) => void;
   onProcess?: (id: string) => void;
 }) {
-  const getTitle = (guid: string) => trackMap.get(guid) || guid;
+  const getTitle = (r: RequestDto) => r.trackArtistTitle || trackMap.get(r.trackGuid) || r.trackGuid;
 
   return (
     <div className="mb-8">
@@ -92,7 +92,7 @@ function SectionTable({
                 <React.Fragment key={r.id}>
                   <tr className="align-top">
                     <td className="px-4 py-3 whitespace-nowrap font-medium">
-                      {getTitle(r.trackGuid)}
+                      {getTitle(r)}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {r.requestedBy || '-'}

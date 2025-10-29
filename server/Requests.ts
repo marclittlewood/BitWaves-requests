@@ -12,12 +12,13 @@ export class Requests {
     return;
   }
 
-  async addRequest(trackGuid: string, requestedBy: string, message?: string, ipAddress?: string) {
+  async addRequest(trackGuid: string, requestedBy: string, message?: string, ipAddress?: string, trackArtistTitle?: string) {
     const now = new Date();
     const req: RequestDto = {
       id: uuidv4(),
       trackGuid,
       requestedBy,
+      trackArtistTitle,
       message,
       ipAddress,
       requestedAt: now,

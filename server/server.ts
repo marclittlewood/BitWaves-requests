@@ -99,7 +99,9 @@ app.post('/api/requestTrack', async (req: Request, res: Response) => {
       return;
     }
 
-    await requests.addRequest(trackGuid, requestedBy, trimmedMessage, clientIp);
+    const foundTrack = tracks.getTrackByGuid(trackGuid);
+    const trackArtistTitle = foundTrack?.artistTitle;
+    await requests.addRequest(trackGuid, requestedBy, trimmedMessage, clientIp, trackArtistTitle);
     res.json({ success: true });
   } catch (error) {
     console.error('Error processing request:', error);

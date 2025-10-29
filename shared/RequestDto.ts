@@ -4,6 +4,8 @@ export interface RequestDto {
   id: string;
   trackGuid: string;
   requestedBy: string;
+  /** snapshot of the display title at request time */
+  trackArtistTitle?: string;
   message?: string;
   ipAddress?: string;
   requestedAt: Date;
