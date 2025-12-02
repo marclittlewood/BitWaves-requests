@@ -74,11 +74,21 @@ export class Requests {
     return req;
   }
 
+  async getRequests(status: 'all' | RequestStatus = 'all', limit: number = 200): Promise<RequestDto[]> {
+    let list = this.requests.slice();
+    if (status !== 'all') {
+      list = list.filter(r => r.status === status);
+    }
+    list = list.sort((a, b) => +new Date(b.requestedAt) - +new Date(a.requestedAt));
+    return list.slice(0, limit);
+  }
+
   async deleteRequest(id: string) {
     const req = this.requests.find(r => r.id === id);
     if (!req) return false;
     req.status = 'deleted';
     req.processedAt = new Date();
+    // prevent any further auto-processing on deleted
     req.autoProcessAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
     await this.save();
     return true;
@@ -131,40 +141,38 @@ export class Requests {
     if (!req) return false;
     req.status = 'processed';
     req.processedAt = new Date();
+    // make it permanently ineligible unless manually changed
     req.autoProcessAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
     await this.save();
     return true;
-  }
-
-  async getRequests(): Promise<RequestDto[]> {
-    return [...this.requests];
   }
 
   async getRequestsByStatus(status: RequestStatus): Promise<RequestDto[]> {
     return this.requests.filter(r => r.status === status);
   }
 
-  async getRequestsForAutoProcessing(): Promise<RequestDto[]> {
-    const now = new Date();
+  async getAutoProcessEligible(): Promise<RequestDto[]> {
+    const now = Date.now();
     return this.requests.filter(r =>
       r.status === 'pending' &&
-      r.autoProcessAt &&
-      r.autoProcessAt <= now
+      new Date(r.autoProcessAt).getTime() <= now
     );
   }
 
-  async getIpCountsWithinWindow(windowMs: number): Promise<{ [ip: string]: number }> {
+  // --- Moderation helpers ---
+  private countInWindowByIp(ipAddress: string, windowMs: number): number {
     const now = Date.now();
-    const result: { [ip: string]: number } = {};
-
-    for (const r of this.requests) {
-      if (!r.ipAddress) continue;
+    return this.requests.filter(r => {
+      if (!r.ipAddress) return false;
       const ts = new Date(r.requestedAt).getTime();
-      if (now - ts <= windowMs) {
-        result[r.ipAddress] = (result[r.ipAddress] || 0) + 1;
-      }
-    }
-    return result;
+      return r.ipAddress === ipAddress && (now - ts) <= windowMs;
+    }).length;
+  }
+
+  async getCountsByIp(ipAddress: string) {
+    const perHour = this.countInWindowByIp(ipAddress, 60 * 60 * 1000);
+    const perDay  = this.countInWindowByIp(ipAddress, 24 * 60 * 60 * 1000);
+    return { perHour, perDay };
   }
 
   /**
