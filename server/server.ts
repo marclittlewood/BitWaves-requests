@@ -5,12 +5,12 @@ import { Tracks } from './Tracks';
 import { Requests } from './Requests';
 import { PlayItLiveApiClient } from './PlayItLiveApiClient';
 import { RequestProcessor } from './RequestProcessor';
-import { RequestAgent } from "./RequestAgent";
+import { RequestAgent } from './RequestAgent';
 import { authenticateJWT, login } from './auth';
 import { SettingsDto } from '../shared/SettingsDto';
 
 if (process.env.NODE_ENV !== 'production') {
-  dotenv.config();
+ dotenv.config();
 }
 
 const app = express();
@@ -20,14 +20,14 @@ app.use(express.static(path.join(__dirname, '../client/dist')));
 
 const PORT = Number(process.env.PORT || 3000);
 const MAX_REQUESTS_PER_HOUR = Number(process.env.MAX_REQUESTS_PER_HOUR || 4);
-const MAX_REQUESTS_PER_DAY  = Number(process.env.MAX_REQUESTS_PER_DAY  || 20);
+const MAX_REQUESTS_PER_DAY = Number(process.env.MAX_REQUESTS_PER_DAY || 20);
 const MAX_MESSAGE_LENGTH = 150;
 
 const requiredEnvVars = ['PLAYIT_LIVE_BASE_URL', 'PLAYIT_LIVE_API_KEY'];
 requiredEnvVars.forEach((varName) => {
-  if (!process.env[varName]) {
-    console.error(`Error: ${varName} is required but not set`);
-  }
+ if (!process.env[varName]) {
+  console.error(`Error: ${varName} is required but not set`);
+ }
 });
 
 const playItLiveBaseUrl = process.env.PLAYIT_LIVE_BASE_URL!;
@@ -45,206 +45,264 @@ const requestAgent = new RequestAgent(playItLiveApiClient, tracks);
 const requestProcessor = new RequestProcessor(requests, requestAgent);
 
 function getClientIp(req: Request): string {
-  const xff = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim();
-  const raw = xff ?? req.socket.remoteAddress ?? (req as any).ip ?? '';
-  const ip = raw.startsWith('::ffff:') ? raw.slice(7) : raw;
-  return ip || 'unknown';
+ const xff = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim();
+ const raw = xff ?? req.socket.remoteAddress ?? (req as any).ip ?? '';
+ const ip = raw.startsWith('::ffff:') ? raw.slice(7) : raw;
+ return ip || 'unknown';
 }
 
 // Routes
 app.get('/api/tracks', (req, res) => {
-  res.json(tracks.getRequestableTracks());
+ res.json(tracks.getRequestableTracks());
 });
 
 app.get('/api/settings', (req, res) => {
-  const settings: SettingsDto = { maxMessageLength: MAX_MESSAGE_LENGTH };
-  res.json(settings);
+ const settings: SettingsDto = { maxMessageLength: MAX_MESSAGE_LENGTH };
+ res.json(settings);
+});
+
+// Public, privacy-safe pending request feed for the BitWaves website.
+// It exposes only the request ID, queue position, song/artist, status and
+// request time. Listener names, messages and IP addresses are never returned.
+app.get('/api/public/queue', async (req: Request, res: Response) => {
+ try {
+  const requestedLimit = Number(req.query.limit || 12);
+  const limit = Number.isFinite(requestedLimit)
+   ? Math.max(1, Math.min(30, Math.floor(requestedLimit)))
+   : 12;
+
+  const all = await requests.getRequests('all', 500);
+  const waiting = all
+   .filter(r => r.status === 'pending' || r.status === 'processing')
+   .sort((a, b) => +new Date(a.requestedAt) - +new Date(b.requestedAt));
+
+  const total = waiting.length;
+  const items = waiting.slice(0, limit).map((r, index) => {
+   const track = tracks.getTrackByGuid(r.trackGuid);
+   return {
+    id: r.id,
+    position: index + 1,
+    trackArtistTitle: r.trackArtistTitle || track?.artistTitle || 'Requested song',
+    status: r.status === 'processing' ? 'processing' : 'pending',
+    requestedAt: new Date(r.requestedAt).toISOString(),
+   };
+  });
+
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.json({ success: true, total, items });
+ } catch (error) {
+  console.error('Error fetching public request queue:', error);
+  res.status(500).json({ success: false, message: 'Request queue unavailable' });
+ }
 });
 
 app.post('/api/requestTrack', async (req: Request, res: Response) => {
+ try {
+  const { trackGuid, requestedBy, message } = req.body || {};
+
+  // Per-track cooldown (default 6 hours; override with env REQUEST_TRACK_COOLDOWN_HOURS)
   try {
-    const { trackGuid, requestedBy, message } = req.body || {};
-
-    // Per-track cooldown (default 6 hours; override with env REQUEST_TRACK_COOLDOWN_HOURS)
-    try {
-      const hours = Number(process.env.REQUEST_TRACK_COOLDOWN_HOURS || 6);
-      const cooldownMs = hours * 60 * 60 * 1000;
-      if (trackGuid) {
-        const cd = requests.isWithinCooldown(trackGuid, cooldownMs);
-        if (cd.blocked) {
-          res.status(429).json({ success: false, error: 'COOLDOWN_ACTIVE', cooldownHours: hours, nextAllowedAt: cd.nextAllowedAt });
-          return;
-        }
-      }
-    } catch (e) {
-      console.error('Cooldown check error', e);
+   const hours = Number(process.env.REQUEST_TRACK_COOLDOWN_HOURS || 6);
+   const cooldownMs = hours * 60 * 60 * 1000;
+   if (trackGuid) {
+    const cd = requests.isWithinCooldown(trackGuid, cooldownMs);
+    if (cd.blocked) {
+     res.status(429).json({
+      success: false,
+      error: 'COOLDOWN_ACTIVE',
+      cooldownHours: hours,
+      nextAllowedAt: cd.nextAllowedAt,
+     });
+     return;
     }
-    const clientIp = getClientIp(req);
-
-    const messageString = (message ?? '').toString();
-    const trimmedMessage = messageString.slice(0, MAX_MESSAGE_LENGTH);
-
-    if (!trackGuid || !requestedBy) {
-      res.status(400).json({ success: false, message: 'Track GUID and requester name are required' });
-      return;
-    }
-
-    const { perHour, perDay } = await requests.getCountsByIp(clientIp);
-    if (perHour >= MAX_REQUESTS_PER_HOUR) {
-      res.status(429).json({ success: false, message: `Per-IP limit reached: max ${MAX_REQUESTS_PER_HOUR} requests per hour.` });
-      return;
-    }
-    if (perDay >= MAX_REQUESTS_PER_DAY) {
-      res.status(429).json({ success: false, message: `Per-IP limit reached: max ${MAX_REQUESTS_PER_DAY} requests per 24 hours.` });
-      return;
-    }
-
-    const foundTrack = tracks.getTrackByGuid(trackGuid);
-    const trackArtistTitle = foundTrack?.artistTitle;
-    await requests.addRequest(trackGuid, requestedBy, trimmedMessage, clientIp, trackArtistTitle);
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error processing request:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+   }
+  } catch (e) {
+   console.error('Cooldown check error', e);
   }
+
+  const clientIp = getClientIp(req);
+  const messageString = (message ?? '').toString();
+  const trimmedMessage = messageString.slice(0, MAX_MESSAGE_LENGTH);
+
+  if (!trackGuid || !requestedBy) {
+   res.status(400).json({ success: false, message: 'Track GUID and requester name are required' });
+   return;
+  }
+
+  const { perHour, perDay } = await requests.getCountsByIp(clientIp);
+  if (perHour >= MAX_REQUESTS_PER_HOUR) {
+   res.status(429).json({
+    success: false,
+    message: `Per-IP limit reached: max ${MAX_REQUESTS_PER_HOUR} requests per hour.`,
+   });
+   return;
+  }
+
+  if (perDay >= MAX_REQUESTS_PER_DAY) {
+   res.status(429).json({
+    success: false,
+    message: `Per-IP limit reached: max ${MAX_REQUESTS_PER_DAY} requests per 24 hours.`,
+   });
+   return;
+  }
+
+  const foundTrack = tracks.getTrackByGuid(trackGuid);
+  const trackArtistTitle = foundTrack?.artistTitle;
+  const addedRequest = await requests.addRequest(
+   trackGuid,
+   requestedBy,
+   trimmedMessage,
+   clientIp,
+   trackArtistTitle
+  );
+
+  // Returning the ID allows the BitWaves website to highlight this listener's
+  // request in the public pending queue on that device.
+  res.json({ success: true, requestId: addedRequest.id });
+ } catch (error) {
+  console.error('Error processing request:', error);
+  res.status(500).json({ success: false, message: 'Internal server error' });
+ }
 });
 
 app.post('/api/login', login);
 
-
 app.get('/api/requests', authenticateJWT, async (req, res) => {
-  try {
-    const status = (req.query.status as string) || 'unprocessed'; // 'unprocessed' | 'processed' | 'all'
-    const limit = Number(req.query.limit || 200);
+ try {
+  const status = (req.query.status as string) || 'unprocessed'; // 'unprocessed' | 'processed' | 'all'
+  const limit = Number(req.query.limit || 200);
+  const all = await requests.getRequests();
+  let list = all;
 
-    const all = await requests.getRequests();
+  if (status === 'unprocessed') {
+   list = all.filter(r => !r.processedAt);
+  } else if (status === 'processed') {
+   list = all.filter(r => !!r.processedAt);
+  } // 'all' => no filtering
 
-    let list = all;
-    if (status === 'unprocessed') {
-      list = all.filter(r => !r.processedAt);
-    } else if (status === 'processed') {
-      list = all.filter(r => !!r.processedAt);
-    } // 'all' => no filtering
+  // newest first, by requestedAt (fallback to processedAt if needed)
+  list.sort((a, b) => {
+   const aTs = new Date((a as any).requestedAt ?? (a as any).processedAt ?? 0).getTime();
+   const bTs = new Date((b as any).requestedAt ?? (b as any).processedAt ?? 0).getTime();
+   return bTs - aTs;
+  });
 
-    // newest first, by requestedAt (fallback to processedAt if needed)
-    list.sort((a, b) => {
-      const aTs = new Date((a as any).requestedAt ?? (a as any).processedAt ?? 0).getTime();
-      const bTs = new Date((b as any).requestedAt ?? (b as any).processedAt ?? 0).getTime();
-      return bTs - aTs;
-    });
-
-    res.json(limit ? list.slice(0, limit) : list);
-  } catch (e) {
-    console.error('Error fetching requests:', e);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+  res.json(limit ? list.slice(0, limit) : list);
+ } catch (e) {
+  console.error('Error fetching requests:', e);
+  res.status(500).json({ success: false, message: 'Internal server error' });
+ }
 });
+
 app.delete('/api/requests/:id', authenticateJWT, async (req, res) => {
-  const ok = await requests.deleteRequest(req.params.id);
-  if (ok) {
-    res.json({ success: true });
-  } else {
-    res.status(404).json({ success: false, message: 'Request not found' });
-  }
+ const ok = await requests.deleteRequest(req.params.id);
+ if (ok) {
+  res.json({ success: true });
+ } else {
+  res.status(404).json({ success: false, message: 'Request not found' });
+ }
 });
-
 
 // --- Admin request workflow endpoints (Hold / Unhold / Process Now) ---
 app.post('/api/requests/:id/hold', authenticateJWT, async (req: Request, res: Response) => {
-  const ok = await requests.holdRequest(req.params.id);
-  if (!ok) { res.status(404).json({ success: false, message: 'Request not found' }); return; }
-  res.json({ success: true });
+ const ok = await requests.holdRequest(req.params.id);
+ if (!ok) {
+  res.status(404).json({ success: false, message: 'Request not found' });
+  return;
+ }
+ res.json({ success: true });
 });
 
 app.post('/api/requests/:id/unhold', authenticateJWT, async (req: Request, res: Response) => {
-  const ok = await requests.unholdRequest(req.params.id);
-  if (!ok) { res.status(404).json({ success: false, message: 'Request not found' }); return; }
-  res.json({ success: true });
+ const ok = await requests.unholdRequest(req.params.id);
+ if (!ok) {
+  res.status(404).json({ success: false, message: 'Request not found' });
+  return;
+ }
+ res.json({ success: true });
 });
 
 app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res: Response) => {
-  try {
-    const id = req.params.id;
+ try {
+  const id = req.params.id;
 
-    // Load first so we can handle 'held'
-    const allBefore = await requests.getRequests('all');
-    const existing = allBefore.find(r => r.id === id);
-    if (!existing) {
-      res.status(404).json({ success: false, message: 'Request not found' });
-      return;
-    }
-
-    // If held, unhold so we can claim
-    if (existing.status === 'held') {
-      const unheld = await requests.unholdRequest(id);
-      if (!unheld) {
-        res.status(409).json({ success: false, message: 'Unable to unhold request' });
-        return;
-      }
-    }
-
-    // Claim for immediate processing
-    const claimed = await requests.setProcessing(id, true);
-    if (!claimed) {
-      res.status(409).json({ success: false, message: 'Unable to claim request for processing' });
-      return;
-    }
-
-    // Re-fetch for TS narrowing
-    const all = await requests.getRequests('all');
-    const found = all.find(r => r.id === id);
-    if (!found) {
-      await requests.setProcessing(id, false);
-      res.status(404).json({ success: false, message: 'Request not found' });
-      return;
-    } else {
-      const note = `${found.requestedBy ?? ''}${found.message ? ' - ' + found.message : ''}`;
-
-      const pairs = await requestAgent.getAvailableItems();
-      if (!pairs || pairs.length === 0) {
-        await requests.setProcessing(id, false);
-        res.status(409).json({ success: false, message: 'No available request slots in playout log.' });
-        return;
-      }
-
-      let processed = false;
-      for (const pair of pairs) {
-        try {
-          const ok = await requestAgent.requestTrack(
-            found.trackGuid,
-            pair.breakNoteItemGuid,
-            pair.requestItemGuid,
-            note
-          );
-          if (ok) {
-            await requests.markProcessed(id);
-            processed = true;
-            break;
-          }
-        } catch {
-          // try next slot
-        }
-      }
-
-      if (!processed) {
-        await requests.setProcessing(id, false);
-        res.status(502).json({ success: false, message: 'Failed to process request via PlayIt Live.' });
-        return;
-      }
-
-      res.json({ success: true });
-    }
-  } catch (err) {
-    console.error('Immediate process error:', err);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+  // Load first so we can handle 'held'
+  const allBefore = await requests.getRequests('all');
+  const existing = allBefore.find(r => r.id === id);
+  if (!existing) {
+   res.status(404).json({ success: false, message: 'Request not found' });
+   return;
   }
+
+  // If held, unhold so we can claim
+  if (existing.status === 'held') {
+   const unheld = await requests.unholdRequest(id);
+   if (!unheld) {
+    res.status(409).json({ success: false, message: 'Unable to unhold request' });
+    return;
+   }
+  }
+
+  // Claim for immediate processing
+  const claimed = await requests.setProcessing(id, true);
+  if (!claimed) {
+   res.status(409).json({ success: false, message: 'Unable to claim request for processing' });
+   return;
+  }
+
+  // Re-fetch for TS narrowing
+  const all = await requests.getRequests('all');
+  const found = all.find(r => r.id === id);
+  if (!found) {
+   await requests.setProcessing(id, false);
+   res.status(404).json({ success: false, message: 'Request not found' });
+   return;
+  } else {
+   const note = `${found.requestedBy ?? ''}${found.message ? ' - ' + found.message : ''}`;
+   const pairs = await requestAgent.getAvailableItems();
+   if (!pairs || pairs.length === 0) {
+    await requests.setProcessing(id, false);
+    res.status(409).json({ success: false, message: 'No available request slots in playout log.' });
+    return;
+   }
+
+   let processed = false;
+   for (const pair of pairs) {
+    try {
+     const ok = await requestAgent.requestTrack(
+      found.trackGuid,
+      pair.breakNoteItemGuid,
+      pair.requestItemGuid,
+      note
+     );
+     if (ok) {
+      await requests.markProcessed(id);
+      processed = true;
+      break;
+     }
+    } catch {
+     // try next slot
+    }
+   }
+
+   if (!processed) {
+    await requests.setProcessing(id, false);
+    res.status(502).json({ success: false, message: 'Failed to process request via PlayIt Live.' });
+    return;
+   }
+
+   res.json({ success: true });
+  }
+ } catch (err) {
+  console.error('Immediate process error:', err);
+  res.status(500).json({ success: false, message: 'Internal server error' });
+ }
 });
 
-
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/dist', 'index.html'));
+ res.sendFile(path.join(__dirname, '../client/dist', 'index.html'));
 });
 
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+ console.log(`Server is running on port ${PORT}`);
 });
