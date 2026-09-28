@@ -33,15 +33,17 @@ requiredEnvVars.forEach((varName) => {
 const playItLiveBaseUrl = process.env.PLAYIT_LIVE_BASE_URL!;
 const playItLiveApiKey = process.env.PLAYIT_LIVE_API_KEY!;
 const requestableTrackGroupName = process.env.REQUESTABLE_TRACK_GROUP_NAME;
+const requestSweeperTrackGroupName = process.env.REQUEST_SWEEPER_TRACK_GROUP_NAME;
+const requestSweeperPlaceholderTrackName = process.env.REQUEST_SWEEPER_PLACEHOLDER_TRACK_NAME || 'Request Sweeper Placeholder';
 
 const playItLiveApiClient = new PlayItLiveApiClient(playItLiveBaseUrl, playItLiveApiKey);
-const tracks = new Tracks(playItLiveApiClient, requestableTrackGroupName);
+const tracks = new Tracks(playItLiveApiClient, requestableTrackGroupName, requestSweeperTrackGroupName);
 tracks.init();
 
 const requests = new Requests();
 requests.init();
 
-const requestAgent = new RequestAgent(playItLiveApiClient, tracks);
+const requestAgent = new RequestAgent(playItLiveApiClient, tracks, requestSweeperPlaceholderTrackName);
 const requestProcessor = new RequestProcessor(requests, requestAgent);
 
 function getClientIp(req: Request): string {
@@ -271,11 +273,10 @@ app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res:
     try {
      const ok = await requestAgent.requestTrack(
       found.trackGuid,
-      pair.breakNoteItemGuid,
-      pair.requestItemGuid,
+      pair,
       note
      );
-     if (ok) {
+     if (ok.success) {
       await requests.markProcessed(id);
       processed = true;
       break;

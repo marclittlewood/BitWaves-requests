@@ -8,14 +8,14 @@ export class PlayItLiveApiClient {
             headers: {
                 'Authorization': `Bearer ${this.apiKey}`
             }
-        }); 
+        });
 
-        return await response.json() as TrackGroupsResponse;
+        return await this.readJson<TrackGroupsResponse>(response, 'fetch PlayIt Track Groups');
     }
 
     async getTrackListItems(columnIds: string, trackGroupGuid?: string) {
         const url = new URL(`${this.baseUrl}/api/control/tracks/listItems`);
-        
+
         url.searchParams.append('columnIds', columnIds);
         if (trackGroupGuid) {
             url.searchParams.append('trackGroupGuid', trackGroupGuid);
@@ -27,7 +27,7 @@ export class PlayItLiveApiClient {
             }
         });
 
-        return await response.json() as TrackListResponse;
+        return await this.readJson<TrackListResponse>(response, 'fetch PlayIt tracks');
     }
 
     async getCurrentPlayoutLogItem() {
@@ -37,7 +37,7 @@ export class PlayItLiveApiClient {
             }
         });
 
-        return await response.json() as PlayoutLogItem;
+        return await this.readJson<PlayoutLogItem>(response, 'fetch current PlayIt playout item');
     }
 
     async getPlayoutLogItems(hourStartTime: Date) {
@@ -50,8 +50,8 @@ export class PlayItLiveApiClient {
                 'Authorization': `Bearer ${this.apiKey}`
             }
         });
-    
-        return (await response.json() as PlayoutLogItemsResponse).items;
+
+        return (await this.readJson<PlayoutLogItemsResponse>(response, 'fetch PlayIt playout log')).items;
     }
 
     async updateBreakNoteInPlayoutLog(guid: string, duration: string, notes: string) {
@@ -64,7 +64,7 @@ export class PlayItLiveApiClient {
             body: JSON.stringify({ guid, duration, notes })
         });
 
-        return await response.json();
+        return await this.readOptionalJson(response, 'update PlayIt break note');
     }
 
     async updateTrackInPlayoutLog(guid: string, trackGuid: string) {
@@ -77,9 +77,40 @@ export class PlayItLiveApiClient {
             body: JSON.stringify({ guid, trackGuid })
         });
 
-        return await response.json();
+        return await this.readOptionalJson(response, 'update PlayIt playout track');
     }
-    
+
+    private async readJson<T>(response: Response, operation: string): Promise<T> {
+        const body = await response.text();
+        if (!response.ok) {
+            throw new Error(`${operation} failed (${response.status} ${response.statusText})${body ? `: ${body}` : ''}`);
+        }
+
+        if (!body) {
+            throw new Error(`${operation} returned an empty response.`);
+        }
+
+        try {
+            return JSON.parse(body) as T;
+        } catch {
+            throw new Error(`${operation} returned invalid JSON.`);
+        }
+    }
+
+    private async readOptionalJson(response: Response, operation: string): Promise<any> {
+        const body = await response.text();
+        if (!response.ok) {
+            throw new Error(`${operation} failed (${response.status} ${response.statusText})${body ? `: ${body}` : ''}`);
+        }
+
+        if (!body) return { success: true };
+
+        try {
+            return JSON.parse(body);
+        } catch {
+            return { success: true, raw: body };
+        }
+    }
 }
 
 interface TrackListResponse {
@@ -105,7 +136,7 @@ interface TrackGroup {
     name: string;
 }
 
-interface PlayoutLogItem {
+export interface PlayoutLogItem {
     guid: string;
     hourStartTime: string;
     startTime: string;
@@ -145,4 +176,3 @@ interface AdditionalField {
 interface PlayoutLogItemsResponse {
     items: PlayoutLogItem[];
 }
-

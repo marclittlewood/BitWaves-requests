@@ -2,54 +2,95 @@ import { PlayItLiveApiClient } from "./PlayItLiveApiClient";
 import { Tracks } from "./Tracks";
 
 export class RequestAgent {
+    private lastSweeperTrackGuid?: string;
+    private readonly sweeperPlaceholderTrackName: string;
 
-    constructor(private playItLiveApiClient: PlayItLiveApiClient, private tracks: Tracks) {
+    constructor(
+        private playItLiveApiClient: PlayItLiveApiClient,
+        private tracks: Tracks,
+        sweeperPlaceholderTrackName = 'Request Sweeper Placeholder'
+    ) {
+        this.sweeperPlaceholderTrackName = sweeperPlaceholderTrackName.trim();
     }
 
     async getAvailableItems(): Promise<RequestPair[]> {
-        /* 
-         * Get the current playout log item and use it to find the current hour's start time
-         * Then get all playout log items for current hour and next hour
-         * Find the current item's position and get all items after it plus next hour's items
+        /*
+         * Get the current playout log item and use it to find the current hour's start time.
+         * Then get all playout log items for the current hour and next hour.
+         * Find the current item's position and inspect all items after it plus next hour's items.
          */
-        
         const currentPlayoutLogItem = await this.playItLiveApiClient.getCurrentPlayoutLogItem();
         const currentHourStartTime = new Date(currentPlayoutLogItem.hourStartTime);
         const playoutLogItems = await this.playItLiveApiClient.getPlayoutLogItems(currentHourStartTime);
         const nextHourStartTime = new Date(currentHourStartTime.getTime() + 60 * 60 * 1000);
         const nextHourPlayoutLogItems = await this.playItLiveApiClient.getPlayoutLogItems(nextHourStartTime);
         const currentItemIndex = playoutLogItems.findIndex(item => item.guid === currentPlayoutLogItem.guid);
-        const itemsAfterCurrentItem = playoutLogItems.slice(currentItemIndex + 1);
+        const itemsAfterCurrentItem = currentItemIndex >= 0
+            ? playoutLogItems.slice(currentItemIndex + 1)
+            : playoutLogItems;
         const allItems = [...itemsAfterCurrentItem, ...nextHourPlayoutLogItems];
 
         const requestPairs: RequestPair[] = [];
 
-        let breakNoteItemGuid = null;
+        let pendingPair: {
+            breakNoteItemGuid: string;
+            sweeperItemGuid?: string;
+            sweeperPlaceholderTrackGuid?: string;
+        } | null = null;
+
         /*
-         * Loop through all items looking for pairs of break notes and tracks that can be used for requests
-         * When we find a break note with "REQUEST" in it, store its guid
-         * Then look for the next track that is a Song type
-         * When found, create a request pair and clear the stored break note guid
+         * REQUEST clock pattern supported by this build:
+         *
+         *   Break Note: REQUEST
+         *   Track: Request Sweeper Placeholder   (optional, but required for sweeper playback)
+         *   Track: normal Song
+         *
+         * The placeholder is deliberately a real Track item so the existing PlayIt Control API
+         * updateTrack endpoint can safely swap it for a real request sweeper only when a listener
+         * request is actually allocated to this slot. If there is no request, PlayIt simply plays
+         * the silent placeholder and the normal scheduled song.
+         *
+         * Existing clocks without the placeholder remain fully compatible: requests are still
+         * inserted into the next Song exactly as before, just without a sweeper.
          */
-        for (let i = 0; i < allItems.length; i++) {
-            const item = allItems[i];
+        for (const item of allItems) {
+            if (!item) continue;
 
-            if (item) {
-                if(item.type === 'track') {
-                    if(breakNoteItemGuid) {
-                        const track = this.tracks.getTrackByGuid(item.trackGuid);
-                        if(track?.type == 'Song') {
-                            requestPairs.push({ breakNoteItemGuid, requestItemGuid: item.guid });
-                            breakNoteItemGuid = null;
-                        }
-                    }
-                }
+            if (item.type === 'breakNote') {
+                const isRequestBreak = item.additionalFields.some(field =>
+                    field.name === 'Break Note' && field.value.trim().toUpperCase() === 'REQUEST'
+                );
 
-                if (item.type === 'breakNote') {
-                    if (item.additionalFields.some(field => field.name === 'Break Note' && field.value.toLocaleUpperCase() == 'REQUEST')) {
-                        breakNoteItemGuid = item.guid;
-                    }
+                if (isRequestBreak) {
+                    pendingPair = { breakNoteItemGuid: item.guid };
                 }
+                continue;
+            }
+
+            if (!pendingPair || item.type !== 'track') continue;
+
+            const track = this.tracks.getTrackByGuid(item.trackGuid);
+            if (!track) continue;
+
+            if (
+                !pendingPair.sweeperItemGuid &&
+                this.isSweeperPlaceholder(track.artistTitle)
+            ) {
+                pendingPair.sweeperItemGuid = item.guid;
+                pendingPair.sweeperPlaceholderTrackGuid = item.trackGuid;
+                continue;
+            }
+
+            if (track.type === 'Song') {
+                requestPairs.push({
+                    breakNoteItemGuid: pendingPair.breakNoteItemGuid,
+                    requestItemGuid: item.guid,
+                    sweeperItemGuid: pendingPair.sweeperItemGuid,
+                    sweeperPlaceholderTrackGuid: pendingPair.sweeperPlaceholderTrackGuid,
+                    scheduledStartTime: item.startTime,
+                    displayStartTime: item.displayStartTime,
+                });
+                pendingPair = null;
             }
         }
 
@@ -60,16 +101,91 @@ export class RequestAgent {
         return true;
     }
 
-    async requestTrack(trackGuid: string, breakNoteItemGuid: string, requestItemGuid: string, requestText: string) {
-        await this.playItLiveApiClient.updateTrackInPlayoutLog(requestItemGuid, trackGuid);
-        await this.playItLiveApiClient.updateBreakNoteInPlayoutLog(breakNoteItemGuid, '00:00', `REQUESTED BY: ${requestText}`);
+    async requestTrack(trackGuid: string, pair: RequestPair, requestText: string) {
+        let selectedSweeperGuid: string | undefined;
+        let sweeperWasChanged = false;
 
-        return true;
+        /*
+         * If this request slot includes the silent placeholder and a sweeper Track Group has
+         * been configured, replace the placeholder with a randomly selected sweeper. We avoid
+         * an immediate repeat when the group contains more than one item.
+         */
+        if (pair.sweeperItemGuid && pair.sweeperPlaceholderTrackGuid) {
+            const sweeper = this.tracks.getRandomRequestSweeper(this.lastSweeperTrackGuid);
+            if (sweeper) {
+                await this.playItLiveApiClient.updateTrackInPlayoutLog(pair.sweeperItemGuid, sweeper.guid);
+                selectedSweeperGuid = sweeper.guid;
+                sweeperWasChanged = true;
+            } else {
+                console.warn('Request sweeper placeholder found, but no request sweepers are available. Request will play without a sweeper.');
+            }
+        }
+
+        try {
+            await this.playItLiveApiClient.updateTrackInPlayoutLog(pair.requestItemGuid, trackGuid);
+        } catch (error) {
+            // If the requested song could not be assigned, restore the silent placeholder so a
+            // sweeper cannot accidentally play in front of the original scheduled song.
+            if (sweeperWasChanged && pair.sweeperItemGuid && pair.sweeperPlaceholderTrackGuid) {
+                try {
+                    await this.playItLiveApiClient.updateTrackInPlayoutLog(
+                        pair.sweeperItemGuid,
+                        pair.sweeperPlaceholderTrackGuid
+                    );
+                } catch (rollbackError) {
+                    console.error('Failed to restore request sweeper placeholder after request assignment failure:', rollbackError);
+                }
+            }
+            throw error;
+        }
+
+        // The break-note annotation is useful to presenters but is not required for the audio
+        // request to be considered successfully assigned. Do not duplicate a request into another
+        // slot just because the note update fails after the song has already been replaced.
+        try {
+            await this.playItLiveApiClient.updateBreakNoteInPlayoutLog(
+                pair.breakNoteItemGuid,
+                '00:00',
+                `REQUESTED BY: ${requestText}`
+            );
+        } catch (error) {
+            console.error('Requested song was assigned, but the REQUEST break note could not be updated:', error);
+        }
+
+        if (selectedSweeperGuid) {
+            this.lastSweeperTrackGuid = selectedSweeperGuid;
+        }
+
+        return {
+            success: true,
+            sweeperTrackGuid: selectedSweeperGuid,
+            requestItemGuid: pair.requestItemGuid,
+            scheduledStartTime: pair.scheduledStartTime,
+            displayStartTime: pair.displayStartTime,
+        };
     }
 
+    private normaliseTrackLabel(value: string | undefined): string {
+        return (value ?? '').trim().toLowerCase();
+    }
+
+    private isSweeperPlaceholder(trackLabel: string | undefined): boolean {
+        const label = this.normaliseTrackLabel(trackLabel);
+        const wanted = this.normaliseTrackLabel(this.sweeperPlaceholderTrackName);
+        if (!label || !wanted) return false;
+
+        return label === wanted ||
+            label.endsWith(` - ${wanted}`) ||
+            label.endsWith(` – ${wanted}`) ||
+            label.endsWith(` — ${wanted}`);
+    }
 }
 
 export interface RequestPair {
     breakNoteItemGuid: string;
     requestItemGuid: string;
+    sweeperItemGuid?: string;
+    sweeperPlaceholderTrackGuid?: string;
+    scheduledStartTime?: string;
+    displayStartTime?: string;
 }

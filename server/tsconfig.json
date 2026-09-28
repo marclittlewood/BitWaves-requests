@@ -1,3 +1,6 @@
 {
-    "extends": "@tsconfig/node18/tsconfig.json",
+  "extends": "@tsconfig/node18/tsconfig.json",
+  "exclude": [
+    "server_patch_additions.ts"
+  ]
 }

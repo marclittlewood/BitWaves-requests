@@ -36,18 +36,21 @@ export class RequestProcessor {
 
         for (const item of [...availableItems]) {
           try {
-            const ok = await this.requestAgent.requestTrack(
+            const result = await this.requestAgent.requestTrack(
               request.trackGuid,
-              item.breakNoteItemGuid,
-              item.requestItemGuid,
+              item,
               request.requestedBy + (request.message ? ` — ${request.message}` : '')
             );
-            if (ok) {
+            if (result.success) {
               await this.requests.markProcessed(request.id);
               const idx = availableItems.indexOf(item);
               if (idx >= 0) availableItems.splice(idx, 1);
               processed = true;
-              console.log('Processed request:', request.id);
+              console.log(
+                'Processed request:',
+                request.id,
+                result.sweeperTrackGuid ? `(sweeper ${result.sweeperTrackGuid})` : '(no sweeper)'
+              );
               break;
             }
           } catch (e) {

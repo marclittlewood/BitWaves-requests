@@ -52,6 +52,7 @@ This application allows listeners to browse and request songs for a radio statio
       - PLAYIT_LIVE_API_KEY = your_api_key_here
       - ADMIN_PASSWORD = your_secure_admin_password
       - REQUESTABLE_TRACK_GROUP_NAME = your_requestable_track_group_name
+      - REQUEST_SWEEPER_TRACK_GROUP_NAME = your_request_sweeper_track_group_name (optional)
 6. Click Create App
 
 Your app will be deployed and accessible at the URL provided by Digital Ocean, e.g. `<your-app-name>.ondigitalocean.app`. You can configure a custom domain under Settings > Domains if desired.
@@ -66,6 +67,7 @@ You may access the admin dashboard at `<your-app-name>.ondigitalocean.app/admin`
 
 - Add a Break Note item in the playout log or clocks with the text **Request** before each requestable slot.
 - The app will look for these break notes and replace the song after the break note with the requested song.
+- Optional request sweepers are supported. Add a silent `Request Sweeper Placeholder` track between the `REQUEST` Break Note and the normal song slot, then configure `REQUEST_SWEEPER_TRACK_GROUP_NAME`. When a listener request is actually assigned, the placeholder is replaced with a random sweeper from that group. If no request is assigned, the silent placeholder remains. See `REQUEST_SWEEPER_SETUP.md`.
 - When listeners request a song, they will be prompted to enter their name which will be displayed in the break note text once the request is processed.
 - Listeners can also add an optional message that will appear on the Break Note alongside their name.
 - Requests are processed automatically in the order they are received.
@@ -137,6 +139,8 @@ Create a `.env` file in the server directory:
 PLAYIT_LIVE_BASE_URL=http://your-playit-live-server:port
 PLAYIT_LIVE_API_KEY=your_api_key_here
 REQUESTABLE_TRACK_GROUP_NAME=Optional_Track_Group
+REQUEST_SWEEPER_TRACK_GROUP_NAME=Optional_Request_Sweeper_Track_Group
+REQUEST_SWEEPER_PLACEHOLDER_TRACK_NAME=Request Sweeper Placeholder
 ADMIN_PASSWORD=your_secure_admin_password
 JWT_SECRET=random_secret_key_for_jwt
 PORT=3000
@@ -146,7 +150,9 @@ MAX_MESSAGE_LENGTH=150
 Variables explained:
 - `PLAYIT_LIVE_BASE_URL`: URL of your PlayIt Live server
 - `PLAYIT_LIVE_API_KEY`: API key for PlayIt Live
-- `REQUESTABLE_TRACK_GROUP_NAME`: (Optional) Filter tracks by group
+- `REQUESTABLE_TRACK_GROUP_NAME`: (Optional) Filter listener-requestable songs by group
+- `REQUEST_SWEEPER_TRACK_GROUP_NAME`: (Optional) Exact PlayIt Track Group containing request sweepers
+- `REQUEST_SWEEPER_PLACEHOLDER_TRACK_NAME`: (Optional) Placeholder track label; defaults to `Request Sweeper Placeholder`
 - `ADMIN_PASSWORD`: Password for accessing the admin page
 - `JWT_SECRET`: Secret key for signing JWT tokens (optional, uses API key as fallback)
 - `PORT`: Port for the web server
@@ -204,6 +210,7 @@ docker run -p 3000:3000 \
 -e PLAYIT_LIVE_API_KEY=your_key \
 -e ADMIN_PASSWORD=your_secure_password \
 -e REQUESTABLE_TRACK_GROUP_NAME=your_requestable_track_group_name \
+-e REQUEST_SWEEPER_TRACK_GROUP_NAME=your_request_sweeper_track_group_name \
 ghcr.io/playitlabs/song-requests:latest
 ```
 
