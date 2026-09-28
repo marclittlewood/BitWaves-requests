@@ -42,7 +42,10 @@ export class RequestProcessor {
               request.requestedBy + (request.message ? ` — ${request.message}` : '')
             );
             if (result.success) {
-              await this.requests.markProcessed(request.id);
+              await this.requests.markProcessed(request.id, {
+                requestItemGuid: result.requestItemGuid,
+                expectedPlayTime: result.scheduledStartTime,
+              });
               const idx = availableItems.indexOf(item);
               if (idx >= 0) availableItems.splice(idx, 1);
               processed = true;

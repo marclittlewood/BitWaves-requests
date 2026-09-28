@@ -5,6 +5,7 @@ A cleaned-up build of the Song Request app with:
 - ✅ **DigitalOcean App Platform** compatibility (Tailwind v4 PostCSS plugin for Parcel)
 - ✅ Clean `server.ts` (type-safe, no stray returns), `Requests.ts` helpers, and `RequestProcessor` fix
 - ✅ Optional **request sweepers**: a random sweeper from a PlayIt Track Group is substituted immediately before an actually requested song
+- ✅ **Live expected play times**: once assigned, the public queue follows the request song’s PlayIt playout item and reports its current expected start time
 
 ## Environment Variables (required)
 - `PLAYIT_LIVE_BASE_URL`
@@ -46,3 +47,10 @@ npm start --prefix server
 
 ---
 Happy requesting!
+
+
+## Public queue timing
+
+`GET /api/public/queue` returns pending requests plus requests that have already been assigned to PlayIt but have not yet played. Scheduled items include `expectedPlayTime` as an ISO timestamp. The service refreshes that timestamp from the live PlayIt playout log when possible so a website can display an estimate such as “Expected around 11:00 pm”.
+
+The public endpoint does **not** expose the listener name, message, IP address or internal PlayIt item GUID.

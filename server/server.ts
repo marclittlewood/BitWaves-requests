@@ -63,9 +63,11 @@ app.get('/api/settings', (req, res) => {
  res.json(settings);
 });
 
-// Public, privacy-safe pending request feed for the BitWaves website.
-// It exposes only the request ID, queue position, song/artist, status and
-// request time. Listener names, messages and IP addresses are never returned.
+// Public, privacy-safe request feed for the BitWaves website.
+// Pending requests are shown in queue order. Once a request is assigned to a
+// PlayIt playout item it remains visible as "scheduled" and, where possible,
+// its expected start time is refreshed from PlayIt's live playout log.
+// Listener names, messages, IP addresses and PlayIt item GUIDs are never exposed.
 app.get('/api/public/queue', async (req: Request, res: Response) => {
  try {
   const requestedLimit = Number(req.query.limit || 12);
@@ -78,20 +80,100 @@ app.get('/api/public/queue', async (req: Request, res: Response) => {
    .filter(r => r.status === 'pending' || r.status === 'processing')
    .sort((a, b) => +new Date(a.requestedAt) - +new Date(b.requestedAt));
 
-  const total = waiting.length;
-  const items = waiting.slice(0, limit).map((r, index) => {
+  const assigned = all.filter(r => r.status === 'processed' && !!r.assignedPlayoutItemGuid);
+  let liveSchedule = new Map<string, {
+   guid: string;
+   startTime?: string;
+   displayStartTime?: string;
+   hasPlayed: boolean;
+   isInPast: boolean;
+   willSkip: boolean;
+   isSoftDeleted: boolean;
+  }>();
+
+  if (assigned.length) {
+   try {
+    liveSchedule = await requestAgent.getLiveScheduleForItems(
+     assigned.map(r => r.assignedPlayoutItemGuid!).filter(Boolean)
+    );
+   } catch (error) {
+    // The stored assignment time is intentionally retained as a fallback so a
+    // brief PlayIt API outage does not make scheduled requests disappear.
+    console.warn('Unable to refresh public request times from PlayIt:', error);
+   }
+  }
+
+  const now = Date.now();
+  const storedTimeGraceMs = 15 * 60 * 1000;
+  const scheduled = assigned.flatMap(r => {
+   const itemGuid = r.assignedPlayoutItemGuid!;
+   const live = liveSchedule.get(itemGuid);
+
+   if (live && (live.hasPlayed || live.willSkip || live.isSoftDeleted)) {
+    return [];
+   }
+
+   const candidate = live?.startTime || (r.expectedPlayTime ? new Date(r.expectedPlayTime).toISOString() : '');
+   const parsed = candidate ? new Date(candidate) : null;
+   const expectedPlayTime = parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+
+   // If PlayIt cannot currently resolve the item, keep a recently scheduled
+   // request visible around its last known time, but expire old stale entries.
+   if (!live && (!expectedPlayTime || expectedPlayTime.getTime() < now - storedTimeGraceMs)) {
+    return [];
+   }
+
+   return [{
+    request: r,
+    expectedPlayTime,
+    timingSource: (live ? 'live-log' : 'stored') as 'live-log' | 'stored',
+   }];
+  }).sort((a, b) => {
+   const at = a.expectedPlayTime?.getTime() ?? Number.MAX_SAFE_INTEGER;
+   const bt = b.expectedPlayTime?.getTime() ?? Number.MAX_SAFE_INTEGER;
+   if (at !== bt) return at - bt;
+   return +new Date(a.request.requestedAt) - +new Date(b.request.requestedAt);
+  });
+
+  const publicItems: Array<{
+   id: string;
+   trackArtistTitle: string;
+   status: 'pending' | 'processing' | 'scheduled';
+   requestedAt: string;
+   expectedPlayTime?: string;
+   timingSource?: 'live-log' | 'stored';
+  }> = [];
+
+  for (const row of scheduled) {
+   const track = tracks.getTrackByGuid(row.request.trackGuid);
+   publicItems.push({
+    id: row.request.id,
+    trackArtistTitle: row.request.trackArtistTitle || track?.artistTitle || 'Requested song',
+    status: 'scheduled',
+    requestedAt: new Date(row.request.requestedAt).toISOString(),
+    expectedPlayTime: row.expectedPlayTime?.toISOString(),
+    timingSource: row.timingSource,
+   });
+  }
+
+  for (const r of waiting) {
    const track = tracks.getTrackByGuid(r.trackGuid);
-   return {
+   publicItems.push({
     id: r.id,
-    position: index + 1,
     trackArtistTitle: r.trackArtistTitle || track?.artistTitle || 'Requested song',
     status: r.status === 'processing' ? 'processing' : 'pending',
     requestedAt: new Date(r.requestedAt).toISOString(),
-   };
-  });
+   });
+  }
+
+  const total = publicItems.length;
+  const items = publicItems.slice(0, limit).map((item, index) => ({
+   ...item,
+   position: index + 1,
+  }));
 
   res.setHeader('Cache-Control', 'no-store, max-age=0');
-  res.json({ success: true, total, items });
+  res.json({ success: true, total, items, serverNow: new Date().toISOString() });
  } catch (error) {
   console.error('Error fetching public request queue:', error);
   res.status(500).json({ success: false, message: 'Request queue unavailable' });
@@ -277,7 +359,10 @@ app.post('/api/requests/:id/process', authenticateJWT, async (req: Request, res:
       note
      );
      if (ok.success) {
-      await requests.markProcessed(id);
+      await requests.markProcessed(id, {
+       requestItemGuid: ok.requestItemGuid,
+       expectedPlayTime: ok.scheduledStartTime,
+      });
       processed = true;
       break;
      }

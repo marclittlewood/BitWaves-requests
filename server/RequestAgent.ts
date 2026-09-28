@@ -97,6 +97,39 @@ export class RequestAgent {
         return requestPairs;
     }
 
+    /**
+     * Resolve assigned request item GUIDs against PlayIt's current and next
+     * playout hours.  This is used by the public queue so an already-scheduled
+     * request can keep following the live log as earlier items run long/short.
+     * A single two-hour fetch services every request ID in the call.
+     */
+    async getLiveScheduleForItems(itemGuids: string[]): Promise<Map<string, RequestScheduleItem>> {
+        const wanted = new Set(itemGuids.filter(Boolean));
+        const found = new Map<string, RequestScheduleItem>();
+        if (!wanted.size) return found;
+
+        const currentPlayoutLogItem = await this.playItLiveApiClient.getCurrentPlayoutLogItem();
+        const currentHourStartTime = new Date(currentPlayoutLogItem.hourStartTime);
+        const currentHourItems = await this.playItLiveApiClient.getPlayoutLogItems(currentHourStartTime);
+        const nextHourStartTime = new Date(currentHourStartTime.getTime() + 60 * 60 * 1000);
+        const nextHourItems = await this.playItLiveApiClient.getPlayoutLogItems(nextHourStartTime);
+
+        for (const item of [...currentHourItems, ...nextHourItems]) {
+            if (!item || !wanted.has(item.guid)) continue;
+            found.set(item.guid, {
+                guid: item.guid,
+                startTime: item.startTime,
+                displayStartTime: item.displayStartTime,
+                hasPlayed: !!item.hasPlayed,
+                isInPast: !!item.isInPast,
+                willSkip: !!item.willSkip,
+                isSoftDeleted: !!item.isSoftDeleted,
+            });
+        }
+
+        return found;
+    }
+
     async canRequestTrack(trackGuid: string, itemGuid: string) {
         return true;
     }
@@ -188,4 +221,14 @@ export interface RequestPair {
     sweeperPlaceholderTrackGuid?: string;
     scheduledStartTime?: string;
     displayStartTime?: string;
+}
+
+export interface RequestScheduleItem {
+    guid: string;
+    startTime?: string;
+    displayStartTime?: string;
+    hasPlayed: boolean;
+    isInPast: boolean;
+    willSkip: boolean;
+    isSoftDeleted: boolean;
 }

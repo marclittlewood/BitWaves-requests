@@ -28,6 +28,7 @@ export class Requests {
         processedAt: r.processedAt ? new Date(r.processedAt) : undefined,
         autoProcessAt: r.autoProcessAt ? new Date(r.autoProcessAt) : new Date(),
         holdExpiresAt: r.holdExpiresAt ? new Date(r.holdExpiresAt) : undefined,
+        expectedPlayTime: r.expectedPlayTime ? new Date(r.expectedPlayTime) : undefined,
       }));
       console.log(`Loaded ${this.requests.length} saved requests from ${this.filePath}`);
     } catch (err: any) {
@@ -49,6 +50,7 @@ export class Requests {
         processedAt: r.processedAt ? new Date(r.processedAt).toISOString() : undefined,
         autoProcessAt: new Date(r.autoProcessAt).toISOString(),
         holdExpiresAt: r.holdExpiresAt ? new Date(r.holdExpiresAt).toISOString() : undefined,
+        expectedPlayTime: r.expectedPlayTime ? new Date(r.expectedPlayTime).toISOString() : undefined,
       }));
       await fs.promises.writeFile(this.filePath, JSON.stringify(serialisable, null, 2), 'utf8');
     } catch (err) {
@@ -136,11 +138,18 @@ export class Requests {
     return true;
   }
 
-  async markProcessed(id: string) {
+  async markProcessed(id: string, assignment?: { requestItemGuid?: string; expectedPlayTime?: string | Date }) {
     const req = this.requests.find(r => r.id === id);
     if (!req) return false;
     req.status = 'processed';
     req.processedAt = new Date();
+    if (assignment?.requestItemGuid) {
+      req.assignedPlayoutItemGuid = assignment.requestItemGuid;
+    }
+    if (assignment?.expectedPlayTime) {
+      const expected = new Date(assignment.expectedPlayTime);
+      if (!Number.isNaN(expected.getTime())) req.expectedPlayTime = expected;
+    }
     // make it permanently ineligible unless manually changed
     req.autoProcessAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
     await this.save();

@@ -1,7 +1,7 @@
 {
   "name": "song-requests-per-ip-server",
-  "version": "1.4.0",
-  "description": "BitWaves Song Requests \u2013 per-IP limits, PlayIt request sweeper support, and DigitalOcean deployment",
+  "version": "1.5.0",
+  "description": "BitWaves Song Requests – per-IP limits, request sweepers, live expected-play times, and DigitalOcean deployment",
   "main": "server.ts",
   "scripts": {
     "start": "ts-node server.ts",

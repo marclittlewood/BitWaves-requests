@@ -1,0 +1,12 @@
+BitWaves Requests v1.5.0 — deployment
+
+1. Extract this ZIP.
+2. Upload the CONTENTS into the existing BitWaves Requests GitHub repository, preserving the server/ and shared/ paths.
+3. Replace existing files when GitHub prompts.
+4. Commit to the branch DigitalOcean deploys (currently main in the BitWaves setup).
+5. Let DigitalOcean redeploy.
+
+No new DigitalOcean environment variables are required for live expected-play times.
+Keep the existing REQUEST_SWEEPER_TRACK_GROUP_NAME= Request Intros setting.
+
+Important: requests scheduled before v1.5.0 do not have a stored PlayIt item GUID and will not gain an expected time retroactively. Use a NEW test request after deployment.
