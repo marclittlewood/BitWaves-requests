@@ -5,15 +5,21 @@ export class Tracks {
     private tracks: TrackDto[];
     private requestableTracks: TrackDto[];
     private requestSweeperTracks: TrackDto[];
+    private normalImagingTrackGuids: Set<string>;
 
     constructor(
         private playItLiveApiClient: PlayItLiveApiClient,
         private requestableTrackGroup?: string,
-        private requestSweeperTrackGroup?: string
+        private requestSweeperTrackGroup?: string,
+        private normalImagingTrackGroups: string[] = []
     ) {
         this.tracks = [];
         this.requestableTracks = [];
         this.requestSweeperTracks = [];
+        this.normalImagingTrackGuids = new Set<string>();
+        this.normalImagingTrackGroups = this.normalImagingTrackGroups
+            .map(name => name.trim())
+            .filter(Boolean);
     }
 
     async init() {
@@ -41,6 +47,10 @@ export class Tracks {
         return this.tracks.find(track => track.guid === guid);
     }
 
+    isNormalImagingTrack(guid: string | undefined): boolean {
+        return !!guid && this.normalImagingTrackGuids.has(guid);
+    }
+
     /**
      * Pick a sweeper from the configured request-sweeper Track Group.
      * Where possible, avoid immediately repeating the last sweeper.
@@ -55,12 +65,14 @@ export class Tracks {
         return candidates[Math.floor(Math.random() * candidates.length)];
     }
 
-    private async findTrackGroupGuid(groupName?: string): Promise<string | undefined> {
+    private resolveTrackGroupGuid(
+        groupName: string | undefined,
+        trackGroups: Array<{ guid: string; name: string }>
+    ): string | undefined {
         if (!groupName) return undefined;
 
-        const trackGroupData = await this.playItLiveApiClient.getTrackGroupListItems();
         const wanted = groupName.trim().toLowerCase();
-        const group = trackGroupData.trackGroups.find(item => item.name.trim().toLowerCase() === wanted);
+        const group = trackGroups.find(item => item.name.trim().toLowerCase() === wanted);
 
         if (!group) {
             console.warn(`PlayIt Track Group not found: ${groupName}`);
@@ -71,10 +83,25 @@ export class Tracks {
     }
 
     private async fetchTracks() {
-        const [requestableTrackGroupGuid, requestSweeperTrackGroupGuid] = await Promise.all([
-            this.findTrackGroupGuid(this.requestableTrackGroup),
-            this.findTrackGroupGuid(this.requestSweeperTrackGroup),
-        ]);
+        const hasConfiguredGroups = !!this.requestableTrackGroup ||
+            !!this.requestSweeperTrackGroup ||
+            this.normalImagingTrackGroups.length > 0;
+
+        const trackGroupData = hasConfiguredGroups
+            ? await this.playItLiveApiClient.getTrackGroupListItems()
+            : { trackGroups: [] as Array<{ guid: string; name: string }> };
+
+        const requestableTrackGroupGuid = this.resolveTrackGroupGuid(
+            this.requestableTrackGroup,
+            trackGroupData.trackGroups
+        );
+        const requestSweeperTrackGroupGuid = this.resolveTrackGroupGuid(
+            this.requestSweeperTrackGroup,
+            trackGroupData.trackGroups
+        );
+        const normalImagingTrackGroupGuids = this.normalImagingTrackGroups
+            .map(name => this.resolveTrackGroupGuid(name, trackGroupData.trackGroups))
+            .filter((guid): guid is string => !!guid);
 
         const requestableTrackData = await this.playItLiveApiClient.getTrackListItems(
             'artist_title,type',
@@ -91,14 +118,30 @@ export class Tracks {
             );
         }
 
+        const normalImagingTrackData = await Promise.all(
+            normalImagingTrackGroupGuids.map(guid =>
+                this.playItLiveApiClient.getTrackListItems('artist_title,type', guid)
+            )
+        );
+
         this.requestableTracks = this.mapToTrackDto(requestableTrackData.tracks);
         this.tracks = this.mapToTrackDto(trackData.tracks);
         this.requestSweeperTracks = this.mapToTrackDto(requestSweeperTrackData.tracks);
+        this.normalImagingTrackGuids = new Set(
+            normalImagingTrackData.flatMap(data => data.tracks.map(track => track.guid))
+        );
 
         console.log('requestableTracks', this.requestableTracks.length);
         console.log('tracks', this.tracks.length);
         if (this.requestSweeperTrackGroup) {
             console.log('requestSweeperTracks', this.requestSweeperTracks.length);
+        }
+        if (this.normalImagingTrackGroups.length) {
+            console.log(
+                'normalImagingTracks',
+                this.normalImagingTrackGuids.size,
+                `(${this.normalImagingTrackGroups.join(', ')})`
+            );
         }
     }
 

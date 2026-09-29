@@ -36,24 +36,35 @@ export class RequestAgent {
             breakNoteItemGuid: string;
             sweeperItemGuid?: string;
             sweeperPlaceholderTrackGuid?: string;
+            normalImagingItemGuid?: string;
+            normalImagingOriginalTrackGuid?: string;
         } | null = null;
 
         /*
-         * REQUEST clock pattern supported by this build:
+         * REQUEST clock patterns supported by this build:
          *
+         *   Automated/request-intro slot:
+         *   Track: Station ID / Show ID                  (optional)
          *   Break Note: REQUEST
-         *   Track: Request Sweeper Placeholder   (optional, but required for sweeper playback)
+         *   Track: Request Sweeper Placeholder           (optional)
          *   Track: normal Song
          *
-         * The placeholder is deliberately a real Track item so the existing PlayIt Control API
-         * updateTrack endpoint can safely swap it for a real request sweeper only when a listener
-         * request is actually allocated to this slot. If there is no request, PlayIt simply plays
-         * the silent placeholder and the normal scheduled song.
+         *   Live-show slot:
+         *   Track: Station ID / Show ID                  (optional)
+         *   Break Note: REQUEST
+         *   Track: normal Song
          *
-         * Existing clocks without the placeholder remain fully compatible: requests are still
-         * inserted into the next Song exactly as before, just without a sweeper.
+         * If a request-intro placeholder is present, the app can replace it with a real request
+         * intro. When the immediately preceding track belongs to one of the configured normal
+         * imaging groups, that normal ID is replaced with the same silent placeholder so the
+         * listener does not hear two sweepers in a row.
+         *
+         * Crucially, normal imaging is NEVER suppressed on a REQUEST slot that does not contain
+         * the request-intro placeholder. Live shows therefore keep their usual Station/Show ID
+         * and simply receive the requested song, exactly as before.
          */
-        for (const item of allItems) {
+        for (let index = 0; index < allItems.length; index++) {
+            const item = allItems[index];
             if (!item) continue;
 
             if (item.type === 'breakNote') {
@@ -62,7 +73,15 @@ export class RequestAgent {
                 );
 
                 if (isRequestBreak) {
-                    pendingPair = { breakNoteItemGuid: item.guid };
+                    const previousItem = index > 0 ? allItems[index - 1] : undefined;
+                    const previousIsConfiguredImaging = previousItem?.type === 'track' &&
+                        this.tracks.isNormalImagingTrack(previousItem.trackGuid);
+
+                    pendingPair = {
+                        breakNoteItemGuid: item.guid,
+                        normalImagingItemGuid: previousIsConfiguredImaging ? previousItem!.guid : undefined,
+                        normalImagingOriginalTrackGuid: previousIsConfiguredImaging ? previousItem!.trackGuid : undefined,
+                    };
                 }
                 continue;
             }
@@ -87,6 +106,8 @@ export class RequestAgent {
                     requestItemGuid: item.guid,
                     sweeperItemGuid: pendingPair.sweeperItemGuid,
                     sweeperPlaceholderTrackGuid: pendingPair.sweeperPlaceholderTrackGuid,
+                    normalImagingItemGuid: pendingPair.normalImagingItemGuid,
+                    normalImagingOriginalTrackGuid: pendingPair.normalImagingOriginalTrackGuid,
                     scheduledStartTime: item.startTime,
                     displayStartTime: item.displayStartTime,
                 });
@@ -137,11 +158,16 @@ export class RequestAgent {
     async requestTrack(trackGuid: string, pair: RequestPair, requestText: string) {
         let selectedSweeperGuid: string | undefined;
         let sweeperWasChanged = false;
+        let normalImagingWasSuppressed = false;
 
         /*
-         * If this request slot includes the silent placeholder and a sweeper Track Group has
-         * been configured, replace the placeholder with a randomly selected sweeper. We avoid
-         * an immediate repeat when the group contains more than one item.
+         * If this request slot includes the silent placeholder and a request-intro Track Group
+         * has been configured, replace the placeholder with a randomly selected request intro.
+         *
+         * Only after a request intro has actually been inserted do we consider suppressing the
+         * normal Station/Show ID immediately before REQUEST. Suppression is done by swapping that
+         * playout item to the same 0.25-second silent placeholder, and only when Tracks has already
+         * verified that the original track belongs to an explicitly configured imaging group.
          */
         if (pair.sweeperItemGuid && pair.sweeperPlaceholderTrackGuid) {
             const sweeper = this.tracks.getRandomRequestSweeper(this.lastSweeperTrackGuid);
@@ -149,16 +175,42 @@ export class RequestAgent {
                 await this.playItLiveApiClient.updateTrackInPlayoutLog(pair.sweeperItemGuid, sweeper.guid);
                 selectedSweeperGuid = sweeper.guid;
                 sweeperWasChanged = true;
+
+                if (pair.normalImagingItemGuid && pair.normalImagingOriginalTrackGuid) {
+                    try {
+                        await this.playItLiveApiClient.updateTrackInPlayoutLog(
+                            pair.normalImagingItemGuid,
+                            pair.sweeperPlaceholderTrackGuid
+                        );
+                        normalImagingWasSuppressed = true;
+                    } catch (error) {
+                        // Do not fail the listener request just because the preceding station/show
+                        // imaging could not be suppressed. The worst case is the old double-sweeper
+                        // behaviour for this one slot, which is safer than dropping the request.
+                        console.error('Request intro was inserted, but the preceding normal imaging could not be suppressed:', error);
+                    }
+                }
             } else {
-                console.warn('Request sweeper placeholder found, but no request sweepers are available. Request will play without a sweeper.');
+                console.warn('Request sweeper placeholder found, but no request sweepers are available. Request will play without a request intro and normal imaging will be left untouched.');
             }
         }
 
         try {
             await this.playItLiveApiClient.updateTrackInPlayoutLog(pair.requestItemGuid, trackGuid);
         } catch (error) {
-            // If the requested song could not be assigned, restore the silent placeholder so a
-            // sweeper cannot accidentally play in front of the original scheduled song.
+            // If the requested song could not be assigned, restore every audio item changed for
+            // this request so the original clock remains intact.
+            if (normalImagingWasSuppressed && pair.normalImagingItemGuid && pair.normalImagingOriginalTrackGuid) {
+                try {
+                    await this.playItLiveApiClient.updateTrackInPlayoutLog(
+                        pair.normalImagingItemGuid,
+                        pair.normalImagingOriginalTrackGuid
+                    );
+                } catch (rollbackError) {
+                    console.error('Failed to restore normal imaging after request assignment failure:', rollbackError);
+                }
+            }
+
             if (sweeperWasChanged && pair.sweeperItemGuid && pair.sweeperPlaceholderTrackGuid) {
                 try {
                     await this.playItLiveApiClient.updateTrackInPlayoutLog(
@@ -192,6 +244,7 @@ export class RequestAgent {
         return {
             success: true,
             sweeperTrackGuid: selectedSweeperGuid,
+            normalImagingSuppressed: normalImagingWasSuppressed,
             requestItemGuid: pair.requestItemGuid,
             scheduledStartTime: pair.scheduledStartTime,
             displayStartTime: pair.displayStartTime,
@@ -219,6 +272,8 @@ export interface RequestPair {
     requestItemGuid: string;
     sweeperItemGuid?: string;
     sweeperPlaceholderTrackGuid?: string;
+    normalImagingItemGuid?: string;
+    normalImagingOriginalTrackGuid?: string;
     scheduledStartTime?: string;
     displayStartTime?: string;
 }

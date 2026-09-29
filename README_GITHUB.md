@@ -6,6 +6,7 @@ A cleaned-up build of the Song Request app with:
 - ✅ Clean `server.ts` (type-safe, no stray returns), `Requests.ts` helpers, and `RequestProcessor` fix
 - ✅ Optional **request sweepers**: a random sweeper from a PlayIt Track Group is substituted immediately before an actually requested song
 - ✅ **Live expected play times**: once assigned, the public queue follows the request song’s PlayIt playout item and reports its current expected start time
+- ✅ **No double sweepers**: approved Station/Show IDs immediately before a request-intro slot are suppressed only when a real request intro is inserted
 
 ## Environment Variables (required)
 - `PLAYIT_LIVE_BASE_URL`
@@ -13,9 +14,10 @@ A cleaned-up build of the Song Request app with:
 - `ADMIN_PASSWORD`
 - `REQUESTABLE_TRACK_GROUP_NAME`
 
-**Optional request-sweeper variables**:
-- `REQUEST_SWEEPER_TRACK_GROUP_NAME` — exact PlayIt Track Group containing request sweepers
+**Optional request-intro/imaging variables**:
+- `REQUEST_SWEEPER_TRACK_GROUP_NAME` — exact PlayIt Track Group containing request intros
 - `REQUEST_SWEEPER_PLACEHOLDER_TRACK_NAME` — defaults to `Request Sweeper Placeholder`
+- `NORMAL_SWEEPER_TRACK_GROUP_NAMES` — comma-separated PlayIt Track Groups whose normal IDs may be suppressed on request-intro slots; BitWaves uses `Station ID's,Show ID's`
 
 See `REQUEST_SWEEPER_SETUP.md` for the required PlayIt clock layout and supplied silent placeholder WAV.
 

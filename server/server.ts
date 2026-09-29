@@ -35,9 +35,22 @@ const playItLiveApiKey = process.env.PLAYIT_LIVE_API_KEY!;
 const requestableTrackGroupName = process.env.REQUESTABLE_TRACK_GROUP_NAME;
 const requestSweeperTrackGroupName = process.env.REQUEST_SWEEPER_TRACK_GROUP_NAME;
 const requestSweeperPlaceholderTrackName = process.env.REQUEST_SWEEPER_PLACEHOLDER_TRACK_NAME || 'Request Sweeper Placeholder';
+const normalSweeperTrackGroupNames = (
+ process.env.NORMAL_SWEEPER_TRACK_GROUP_NAMES ||
+ process.env.NORMAL_IMAGING_TRACK_GROUP_NAMES ||
+ ''
+)
+ .split(/[,;\n]/)
+ .map(name => name.trim())
+ .filter(Boolean);
 
 const playItLiveApiClient = new PlayItLiveApiClient(playItLiveBaseUrl, playItLiveApiKey);
-const tracks = new Tracks(playItLiveApiClient, requestableTrackGroupName, requestSweeperTrackGroupName);
+const tracks = new Tracks(
+ playItLiveApiClient,
+ requestableTrackGroupName,
+ requestSweeperTrackGroupName,
+ normalSweeperTrackGroupNames
+);
 tracks.init();
 
 const requests = new Requests();

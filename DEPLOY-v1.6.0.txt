@@ -1,0 +1,19 @@
+BitWaves Requests v1.6.0 — DigitalOcean/GitHub update
+
+1. Extract this update-only ZIP.
+2. Upload the CONTENTS into the existing BitWaves Requests GitHub repository, preserving folders and replacing matching files.
+3. Commit the changes to the branch watched by DigitalOcean.
+4. Let DigitalOcean redeploy.
+5. In DigitalOcean Environment Variables add:
+
+   NORMAL_SWEEPER_TRACK_GROUP_NAMES = Station ID's,Show ID's
+
+6. Keep the existing request-intro setting:
+
+   REQUEST_SWEEPER_TRACK_GROUP_NAME = Request Intros
+
+No website update is required for v1.6.0.
+
+Behaviour:
+- REQUEST slot WITH Request Sweeper Placeholder: approved Station/Show ID immediately before REQUEST is suppressed when a real Request Intro is inserted.
+- REQUEST slot WITHOUT the placeholder: normal Station/Show imaging is left completely alone.

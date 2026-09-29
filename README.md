@@ -53,6 +53,7 @@ This application allows listeners to browse and request songs for a radio statio
       - ADMIN_PASSWORD = your_secure_admin_password
       - REQUESTABLE_TRACK_GROUP_NAME = your_requestable_track_group_name
       - REQUEST_SWEEPER_TRACK_GROUP_NAME = your_request_sweeper_track_group_name (optional)
+      - NORMAL_SWEEPER_TRACK_GROUP_NAMES = Station ID's,Show ID's (optional; suppresses approved normal imaging only when a request intro is inserted)
 6. Click Create App
 
 Your app will be deployed and accessible at the URL provided by Digital Ocean, e.g. `<your-app-name>.ondigitalocean.app`. You can configure a custom domain under Settings > Domains if desired.
@@ -67,7 +68,7 @@ You may access the admin dashboard at `<your-app-name>.ondigitalocean.app/admin`
 
 - Add a Break Note item in the playout log or clocks with the text **Request** before each requestable slot.
 - The app will look for these break notes and replace the song after the break note with the requested song.
-- Optional request sweepers are supported. Add a silent `Request Sweeper Placeholder` track between the `REQUEST` Break Note and the normal song slot, then configure `REQUEST_SWEEPER_TRACK_GROUP_NAME`. When a listener request is actually assigned, the placeholder is replaced with a random sweeper from that group. If no request is assigned, the silent placeholder remains. See `REQUEST_SWEEPER_SETUP.md`.
+- Optional request intros are supported. Add a silent `Request Sweeper Placeholder` track between the `REQUEST` Break Note and the normal song slot, then configure `REQUEST_SWEEPER_TRACK_GROUP_NAME`. When a listener request is actually assigned, the placeholder is replaced with a random request intro from that group. If `NORMAL_SWEEPER_TRACK_GROUP_NAMES` is configured, an immediately preceding Station/Show ID from those approved groups is suppressed only when the request intro is actually inserted. Live-show REQUEST slots without the placeholder keep their normal imaging. See `REQUEST_SWEEPER_SETUP.md`.
 - When listeners request a song, they will be prompted to enter their name which will be displayed in the break note text once the request is processed.
 - Listeners can also add an optional message that will appear on the Break Note alongside their name.
 - Requests are processed automatically in the order they are received.
@@ -141,6 +142,7 @@ PLAYIT_LIVE_API_KEY=your_api_key_here
 REQUESTABLE_TRACK_GROUP_NAME=Optional_Track_Group
 REQUEST_SWEEPER_TRACK_GROUP_NAME=Optional_Request_Sweeper_Track_Group
 REQUEST_SWEEPER_PLACEHOLDER_TRACK_NAME=Request Sweeper Placeholder
+NORMAL_SWEEPER_TRACK_GROUP_NAMES=Station ID's,Show ID's
 ADMIN_PASSWORD=your_secure_admin_password
 JWT_SECRET=random_secret_key_for_jwt
 PORT=3000
@@ -153,6 +155,7 @@ Variables explained:
 - `REQUESTABLE_TRACK_GROUP_NAME`: (Optional) Filter listener-requestable songs by group
 - `REQUEST_SWEEPER_TRACK_GROUP_NAME`: (Optional) Exact PlayIt Track Group containing request sweepers
 - `REQUEST_SWEEPER_PLACEHOLDER_TRACK_NAME`: (Optional) Placeholder track label; defaults to `Request Sweeper Placeholder`
+- `NORMAL_SWEEPER_TRACK_GROUP_NAMES`: (Optional) Comma/semicolon/newline separated PlayIt Track Groups containing normal Station/Show IDs that may be suppressed only on request-intro slots
 - `ADMIN_PASSWORD`: Password for accessing the admin page
 - `JWT_SECRET`: Secret key for signing JWT tokens (optional, uses API key as fallback)
 - `PORT`: Port for the web server
@@ -211,6 +214,7 @@ docker run -p 3000:3000 \
 -e ADMIN_PASSWORD=your_secure_password \
 -e REQUESTABLE_TRACK_GROUP_NAME=your_requestable_track_group_name \
 -e REQUEST_SWEEPER_TRACK_GROUP_NAME=your_request_sweeper_track_group_name \
+-e "NORMAL_SWEEPER_TRACK_GROUP_NAMES=Station ID's,Show ID's" \
 ghcr.io/playitlabs/song-requests:latest
 ```
 

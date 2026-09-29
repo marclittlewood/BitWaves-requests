@@ -1,3 +1,29 @@
+# BitWaves Requests — v1.6.0
+
+## Normal Station/Show ID suppression for request-intro slots
+
+- Added optional multi-group normal-imaging detection via `NORMAL_SWEEPER_TRACK_GROUP_NAMES`.
+- Supports comma/semicolon/newline separated PlayIt Track Group names, e.g. `Station ID's,Show ID's`.
+- When a REQUEST slot contains the silent `Request Sweeper Placeholder` and a real request intro is successfully inserted, the immediately preceding track is suppressed **only** if it belongs to one of the configured normal-imaging groups.
+- Suppression uses the same 0.25-second silent placeholder, avoiding a Station/Show ID immediately followed by a request intro.
+- Live-show REQUEST slots without the request-intro placeholder remain unchanged: normal Station/Show imaging is retained and only the requested song is substituted.
+- Tracks outside the configured imaging groups are never suppressed.
+- If no real request intro is available, normal imaging is left untouched.
+- If the requested song assignment fails after imaging was suppressed, the app attempts to restore both the original imaging track and the request-intro placeholder.
+- Existing v1.5.0 live expected-play-time behaviour is unchanged.
+
+## Validation performed
+
+- Type-checked the modified request/imaging modules with TypeScript 5.8.
+- Mock-tested approved Station/Show ID suppression with a request-intro placeholder.
+- Mock-tested live-show compatibility with no placeholder (normal imaging remains).
+- Mock-tested unapproved preceding tracks (never suppressed).
+- Mock-tested no-request-intro fallback (normal imaging remains).
+- Mock-tested rollback of both the normal imaging item and request placeholder when requested-song assignment fails.
+- Mock-tested loading multiple normal-imaging Track Groups.
+
+---
+
 # BitWaves Requests — v1.5.0
 
 ## Live expected play times
