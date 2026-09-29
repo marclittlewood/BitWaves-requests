@@ -1,4 +1,4 @@
-# BitWaves Request Intros & Normal Imaging — v1.6.0
+# BitWaves Request Intros & Normal Imaging — v1.6.1
 
 This build can automatically place a request intro immediately before a listener-requested song and, when configured, suppress a normal Station ID / Show ID that would otherwise cause two sweepers to play back-to-back.
 
@@ -31,7 +31,7 @@ A live show can continue to use:
 2. Break Note: `REQUEST`
 3. Song
 
-Because there is **no Request Sweeper Placeholder**, v1.6.0 does not suppress the normal imaging. The requested song is inserted exactly as before.
+Because there is **no Request Sweeper Placeholder**, v1.6.1 does not suppress the normal imaging. The requested song is inserted exactly as before.
 
 Result: **Normal Station/Show ID -> Requested Song**.
 
@@ -95,3 +95,7 @@ Only tracks from these explicitly configured groups are eligible to be suppresse
 You do not have to add request-intro placeholders to live shows. Existing `Break Note: REQUEST -> Song` positions remain compatible.
 
 Use the placeholder only on clocks where you want the automatic Request Intro behaviour.
+
+
+### v1.6.1 imaging-detection note
+The request service checks the nearest preceding real audio track before the `REQUEST` marker. It recognises configured normal imaging from either the refreshed Track Group cache or the Track Group metadata returned with the PlayIt playout-log item. This avoids false misses caused by structural/empty log rows.

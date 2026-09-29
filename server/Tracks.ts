@@ -6,6 +6,7 @@ export class Tracks {
     private requestableTracks: TrackDto[];
     private requestSweeperTracks: TrackDto[];
     private normalImagingTrackGuids: Set<string>;
+    private normalImagingTrackGroupNames: Set<string>;
 
     constructor(
         private playItLiveApiClient: PlayItLiveApiClient,
@@ -20,6 +21,9 @@ export class Tracks {
         this.normalImagingTrackGroups = this.normalImagingTrackGroups
             .map(name => name.trim())
             .filter(Boolean);
+        this.normalImagingTrackGroupNames = new Set(
+            this.normalImagingTrackGroups.map(name => this.normaliseGroupName(name))
+        );
     }
 
     async init() {
@@ -47,8 +51,44 @@ export class Tracks {
         return this.tracks.find(track => track.guid === guid);
     }
 
-    isNormalImagingTrack(guid: string | undefined): boolean {
-        return !!guid && this.normalImagingTrackGuids.has(guid);
+    isNormalImagingTrack(guid: string | undefined, playoutTrackGroups?: string): boolean {
+        if (guid && this.normalImagingTrackGuids.has(guid)) {
+            return true;
+        }
+
+        // PlayIt also exposes Track Group membership directly on playout-log items.
+        // Use that as a second source of truth because a playout item can appear before
+        // the periodic track-group cache has refreshed, and some PlayIt builds include
+        // structural/empty log rows that make GUID-only matching less reliable.
+        if (!playoutTrackGroups || !this.normalImagingTrackGroupNames.size) {
+            return false;
+        }
+
+        const rawGroups = playoutTrackGroups
+            .split(/[,;|\r\n]+/)
+            .map(value => this.normaliseGroupName(value))
+            .filter(Boolean);
+
+        if (rawGroups.some(group => this.normalImagingTrackGroupNames.has(group))) {
+            return true;
+        }
+
+        // Fallback for PlayIt versions that return Track Groups as one formatted string
+        // rather than a clean delimited list. Group names are admin-configured, so an
+        // exact normalised substring is still narrower than matching by title/type.
+        const normalisedAllGroups = this.normaliseGroupName(playoutTrackGroups);
+        return [...this.normalImagingTrackGroupNames].some(group =>
+            !!group && normalisedAllGroups.includes(group)
+        );
+    }
+
+
+    private normaliseGroupName(value: string | undefined): string {
+        return (value ?? '')
+            .trim()
+            .toLowerCase()
+            .replace(/[’‘`]/g, "'")
+            .replace(/\s+/g, ' ');
     }
 
     /**

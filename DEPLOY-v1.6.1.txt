@@ -1,0 +1,20 @@
+BitWaves Requests v1.6.1 — DigitalOcean/GitHub update
+
+Fixes normal Station/Show ID suppression before REQUEST.
+
+1. Extract this update-only ZIP.
+2. Upload the CONTENTS into the existing BitWaves Requests GitHub repository, preserving folders and replacing matching files.
+3. Commit the changes to the branch watched by DigitalOcean.
+4. Let DigitalOcean redeploy.
+5. Keep the existing environment variables:
+
+   REQUEST_SWEEPER_TRACK_GROUP_NAME = Request Intros
+   NORMAL_SWEEPER_TRACK_GROUP_NAMES = Station ID's,Show ID's
+
+No website update is required.
+
+v1.6.1 improvements:
+- finds the nearest preceding AUDIO track even when PlayIt inserts empty/structural rows before the REQUEST break note;
+- recognises Station/Show ID membership from either the refreshed Track Group cache or PlayIt's live playout-log trackGroups field;
+- logs successful suppression as: Suppressed normal imaging before REQUEST;
+- keeps live-show behaviour unchanged when there is no Request Sweeper Placeholder.

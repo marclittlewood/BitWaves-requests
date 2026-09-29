@@ -1,7 +1,7 @@
 {
   "name": "song-requests-per-ip-server",
-  "version": "1.6.0",
-  "description": "BitWaves Song Requests – request intros, normal-imaging suppression, live expected-play times, per-IP limits, and DigitalOcean deployment",
+  "version": "1.6.1",
+  "description": "BitWaves Song Requests – request intros, robust normal-imaging suppression, live expected-play times, per-IP limits, and DigitalOcean deployment",
   "main": "server.ts",
   "scripts": {
     "start": "ts-node server.ts",

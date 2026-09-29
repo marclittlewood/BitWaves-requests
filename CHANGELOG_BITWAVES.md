@@ -1,3 +1,11 @@
+## v1.6.1 — robust Station/Show ID suppression
+
+- Fixed cases where normal imaging immediately before a `REQUEST` marker was not suppressed.
+- The request scanner now walks backwards to the nearest real audio track, ignoring PlayIt structural/empty rows.
+- Normal-imaging detection now uses both the cached configured Track Groups and PlayIt playout-log `trackGroups` metadata.
+- Added runtime diagnostics for successful imaging suppression and for request-intro slots where no configured ID is detected.
+- Live-show request slots without the request-intro placeholder remain untouched.
+
 # BitWaves Requests — v1.6.0
 
 ## Normal Station/Show ID suppression for request-intro slots

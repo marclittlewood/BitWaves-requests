@@ -73,14 +73,21 @@ export class RequestAgent {
                 );
 
                 if (isRequestBreak) {
-                    const previousItem = index > 0 ? allItems[index - 1] : undefined;
-                    const previousIsConfiguredImaging = previousItem?.type === 'track' &&
-                        this.tracks.isNormalImagingTrack(previousItem.trackGuid);
+                    // PlayIt can return structural/empty log rows between the audible ID
+                    // and the REQUEST break note. Look backwards for the nearest actual
+                    // track rather than assuming the immediately previous raw array row
+                    // is the audio item listeners will hear.
+                    const previousTrackItem = this.findPreviousTrackItem(allItems, index);
+                    const previousIsConfiguredImaging = !!previousTrackItem &&
+                        this.tracks.isNormalImagingTrack(
+                            previousTrackItem.trackGuid,
+                            previousTrackItem.trackGroups
+                        );
 
                     pendingPair = {
                         breakNoteItemGuid: item.guid,
-                        normalImagingItemGuid: previousIsConfiguredImaging ? previousItem!.guid : undefined,
-                        normalImagingOriginalTrackGuid: previousIsConfiguredImaging ? previousItem!.trackGuid : undefined,
+                        normalImagingItemGuid: previousIsConfiguredImaging ? previousTrackItem!.guid : undefined,
+                        normalImagingOriginalTrackGuid: previousIsConfiguredImaging ? previousTrackItem!.trackGuid : undefined,
                     };
                 }
                 continue;
@@ -183,12 +190,19 @@ export class RequestAgent {
                             pair.sweeperPlaceholderTrackGuid
                         );
                         normalImagingWasSuppressed = true;
+                        console.log(
+                            'Suppressed normal imaging before REQUEST:',
+                            pair.normalImagingOriginalTrackGuid,
+                            '-> silent placeholder'
+                        );
                     } catch (error) {
                         // Do not fail the listener request just because the preceding station/show
                         // imaging could not be suppressed. The worst case is the old double-sweeper
                         // behaviour for this one slot, which is safer than dropping the request.
                         console.error('Request intro was inserted, but the preceding normal imaging could not be suppressed:', error);
                     }
+                } else {
+                    console.log('Request intro inserted; no configured Station/Show ID was detected immediately before REQUEST.');
                 }
             } else {
                 console.warn('Request sweeper placeholder found, but no request sweepers are available. Request will play without a request intro and normal imaging will be left untouched.');
@@ -249,6 +263,22 @@ export class RequestAgent {
             scheduledStartTime: pair.scheduledStartTime,
             displayStartTime: pair.displayStartTime,
         };
+    }
+
+    private findPreviousTrackItem(items: any[], requestBreakIndex: number): any | undefined {
+        for (let index = requestBreakIndex - 1; index >= 0; index--) {
+            const candidate = items[index];
+            if (!candidate) continue;
+
+            if (candidate.type === 'track') {
+                return candidate;
+            }
+
+            // Ignore non-audio structural rows such as empty positions and break notes.
+            // The first actual track encountered is the immediately preceding audible item.
+        }
+
+        return undefined;
     }
 
     private normaliseTrackLabel(value: string | undefined): string {
